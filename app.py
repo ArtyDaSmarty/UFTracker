@@ -604,13 +604,14 @@ def update_alter_affiliations(alter_id):
         flash("You do not have access to that alter.", "error")
         return redirect(url_for("dashboard"))
     affiliation_id = resolve_entry_reference(data, "affiliation", request.form.get("affiliation_id", ""), user_level)
-    if affiliation_id and not entry_is_accessible(data, "affiliation", affiliation_id, user_level):
+    status = request.form.get("status", "Current")
+    if status != "Independent" and affiliation_id and not entry_is_accessible(data, "affiliation", affiliation_id, user_level):
         flash("You do not have access to that affiliation.", "error")
         return redirect(url_for("alter_detail", alter_id=alter_id))
     if request.form.get("action") == "remove":
         success, message = remove_affiliation_membership(storage, alter_id, affiliation_id)
     else:
-        success, message = update_affiliation_membership(storage, alter_id, affiliation_id, request.form.get("status", "Current"))
+        success, message = update_affiliation_membership(storage, alter_id, affiliation_id, status)
     flash(message, "success" if success else "error")
     clear_request_caches()
     return redirect(url_for("alter_detail", alter_id=alter_id))
