@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+  <h2>{{ view.name }}</h2>
+  <p class="muted">{{ view.id }}</p>
+  {% if can_create_records %}
+  <form method="post" action="{{ url_for('update_document_lock', document_id=view.id) }}" class="stack compact" data-async="swap">
+    <label class="check-row"><input type="checkbox" name="document_locked" {% if view.document_locked %}checked{% endif %}><span>Lock this document</span></label>
+    <button>Save Document Lock</button>
+  </form>
+  {% endif %}
+
+  {% if can_view_document %}
+  {% if can_create_records %}
+  <form method="post" action="{{ url_for('save_document', document_id=view.id) }}" class="stack compact top-gap">
+    <label>Document name<input name="name" value="{{ view.name }}"></label>
+    <label>Format
+      <select name="document_format">
+        <option value="markdown" {% if view.record.format == 'markdown' %}selected{% endif %}>Markdown</option>
+        <option value="html" {% if view.record.format == 'html' %}selected{% endif %}>HTML</option>
+      </select>
+    </label>
+    <label>Tags<input name="tags" value="{{ view.tags_text }}" placeholder="Comma-separated tags"></label>
+    <label>Tied Alters<input name="tie_alters" value="{{ view.tie_inputs.alters }}" list="document-alter-options" placeholder="Comma-separated alter IDs or names"></label>
+    <label>Tied Locations<input name="tie_locations" value="{{ view.tie_inputs.locations }}" list="document-location-options" placeholder="Comma-separated location IDs or names"></label>
+    <label>Tied Affiliations<input name="tie_affiliations" value="{{ view.tie_inputs.affiliations }}" list="document-affiliation-options" placeholder="Comma-separated affiliation IDs or names"></label>
+    <label>Tied Documents<input name="tie_documents" value="{{ view.tie_inputs.documents }}" list="document-document-options" placeholder="Comma-separated document IDs or names"></label>
+    <label>Content<textarea name="content" rows="16">{{ view.record.content }}</textarea></label>
+    <button class="primary">Save Document</button>
+  </form>
+  <datalist id="document-alter-options">
+    {% for entry_id, name in view.alters %}
+    <option value="{{ entry_id }}" label="{{ name }} ({{ entry_id }})"></option>
+    {% endfor %}
+  </datalist>
+  <datalist id="document-location-options">
+    {% for entry_id, name in view.locations %}
+    <option value="{{ entry_id }}" label="{{ name }} ({{ entry_id }})"></option>
+    {% endfor %}
+  </datalist>
+  <datalist id="document-affiliation-options">
+    {% for entry_id, name in view.affiliations %}
+    <option value="{{ entry_id }}" label="{{ name }} ({{ entry_id }})"></option>
+    {% endfor %}
+  </datalist>
+  <datalist id="document-document-options">
+    {% for entry_id, name in view.documents %}
+    <option value="{{ entry_id }}" label="{{ name }} ({{ entry_id }})"></option>
+    {% endfor %}
+  </datalist>
+  {% endif %}
+
+  <div class="stack compact top-gap">
+    <div class="kv"><strong>Format</strong><span>{{ view.record.format|upper }}</span></div>
+    <div class="kv"><strong>Tags</strong><span>{{ view.tags_text or legacy_value }}</span></div>
+  </div>
+
+  <section class="grid cols-2 top-gap">
+    <div class="card">
+      <h3>Linked Alters</h3>
+      {% for item in view.ties.alters %}
+      <a class="list-item" href="{{ url_for('alter_detail', alter_id=item.id) }}">{{ item.name }} <span>{{ item.id }}</span></a>
+      {% else %}
+      <p class="muted">No tied alters.</p>
+      {% endfor %}
+    </div>
+    <div class="card">
+      <h3>Linked Locations</h3>
+      {% for item in view.ties.locations %}
+      <a class="list-item" href="{{ url_for('location_detail', location_id=item.id) }}">{{ item.name }} <span>{{ item.id }}</span></a>
+      {% else %}
+      <p class="muted">No tied locations.</p>
+      {% endfor %}
+    </div>
+    <div class="card">
+      <h3>Linked Affiliations</h3>
+      {% for item in view.ties.affiliations %}
+      <a class="list-item" href="{{ url_for('affiliation_detail', affiliation_id=item.id) }}">{{ item.name }} <span>{{ item.id }}</span></a>
+      {% else %}
+      <p class="muted">No tied affiliations.</p>
+      {% endfor %}
+    </div>
+    <div class="card">
+      <h3>Linked Documents</h3>
+      {% for item in view.ties.documents %}
+      <a class="list-item" href="{{ url_for('document_detail', document_id=item.id) }}">{{ item.name }} <span>{{ item.id }}</span></a>
+      {% else %}
+      <p class="muted">No tied documents.</p>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="card top-gap">
+    <h3>Document Body</h3>
+    <div class="document-body">{{ rendered_content }}</div>
+  </section>
+  {% else %}
+  <p class="muted top-gap">{% if view.document_locked %}This document is locked. You do not have permission to view locked documents.{% else %}You cannot view this document.{% endif %}</p>
+  {% endif %}
+</section>
+{% endblock %}
