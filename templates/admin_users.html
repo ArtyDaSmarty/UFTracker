@@ -4,7 +4,7 @@
   <h2>User Management</h2>
   <p class="muted">Level 4 is reserved for the single Admin. Level 3 is Mod. New users default to Level 1.</p>
   {% for user in users %}
-  <form method="post" class="stack compact bordered">
+  <form method="post" class="stack compact bordered" data-async="swap">
     <input type="hidden" name="user_id" value="{{ user.id }}">
     <div class="kv"><strong>{{ user.username }}</strong><span>Level {{ user.level }} | {{ user.role|upper }}</span></div>
 
