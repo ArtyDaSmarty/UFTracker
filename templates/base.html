@@ -145,6 +145,21 @@
       image.hidden = false;
       trigger.remove();
     });
+
+    document.addEventListener('input', (event) => {
+      const control = event.target.closest('[data-filter-target]');
+      if (!control) {
+        return;
+      }
+      const selector = control.dataset.filterTarget;
+      const valueSelector = control.dataset.filterValue || '';
+      const query = control.value.trim().toLowerCase();
+      document.querySelectorAll(selector).forEach((item) => {
+        const source = valueSelector ? item.querySelector(valueSelector) : item;
+        const haystack = (source ? source.textContent : item.textContent).toLowerCase();
+        item.hidden = query ? !haystack.includes(query) : false;
+      });
+    });
   </script>
 </body>
 </html>
