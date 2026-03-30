@@ -1,8 +1,11 @@
 import json
+import mimetypes
 import os
 import secrets
 import shutil
 import string
+import urllib.parse
+import urllib.request
 from base64 import urlsafe_b64encode
 from datetime import date, datetime, timezone
 from hashlib import sha256
@@ -69,6 +72,35 @@ class LocalStorage:
         with path.open("w", encoding="utf-8") as file:
             json.dump(data, file, indent=2)
 
+    def read_bytes(self, name):
+        path = self.root / name
+        if not path.exists():
+            return None
+        try:
+            return path.read_bytes()
+        except OSError:
+            return None
+
+    def write_bytes(self, name, payload):
+        path = self.root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(payload)
+
+    def delete_bytes(self, name):
+        path = self.root / name
+        try:
+            if path.exists():
+                path.unlink()
+        except OSError:
+            return False
+        return True
+
+    def iter_files(self, prefix):
+        root = self.root / prefix
+        if not root.exists():
+            return []
+        return [str(path.relative_to(self.root)).replace("\\", "/") for path in root.rglob("*") if path.is_file()]
+
 
 class S3Storage:
     def __init__(self, bucket, prefix="", endpoint="", region="", access_key="", secret_key="", path_style=False):
@@ -102,6 +134,35 @@ class S3Storage:
     def write_json(self, name, data):
         body = json.dumps(data, indent=2).encode("utf-8")
         self.client.put_object(Bucket=self.bucket, Key=self._key(name), Body=body, ContentType="application/json")
+
+    def read_bytes(self, name):
+        try:
+            response = self.client.get_object(Bucket=self.bucket, Key=self._key(name))
+            return response["Body"].read()
+        except ClientError:
+            return None
+
+    def write_bytes(self, name, payload):
+        content_type = mimetypes.guess_type(name)[0] or "application/octet-stream"
+        self.client.put_object(Bucket=self.bucket, Key=self._key(name), Body=payload, ContentType=content_type)
+
+    def delete_bytes(self, name):
+        try:
+            self.client.delete_object(Bucket=self.bucket, Key=self._key(name))
+        except ClientError:
+            return False
+        return True
+
+    def iter_files(self, prefix):
+        paginator = self.client.get_paginator("list_objects_v2")
+        keys = []
+        for page in paginator.paginate(Bucket=self.bucket, Prefix=self._key(prefix)):
+            for item in page.get("Contents", []):
+                key = item["Key"]
+                if self.prefix:
+                    key = key[len(self.prefix) + 1 :]
+                keys.append(key)
+        return keys
 
 
 def get_storage(root):
@@ -235,6 +296,25 @@ def migrate_legacy_local_files(source_root, destination_root):
         destination_path = destination_root / filename
         if source_path.exists() and not destination_path.exists():
             shutil.move(str(source_path), str(destination_path))
+
+
+def media_storage_name(kind, entry_id, filename):
+    return f"media/{kind}/{entry_id}/{filename}"
+
+
+def is_managed_media_url(value):
+    return str(value or "").startswith("/media/")
+
+
+def media_name_from_url(value):
+    value = str(value or "")
+    if not is_managed_media_url(value):
+        return None
+    return value.removeprefix("/media/")
+
+
+def managed_media_url(kind, entry_id, filename):
+    return f"/media/{kind}/{entry_id}/{filename}"
 
 
 def ensure_storage_files(storage):
@@ -910,6 +990,63 @@ def remove_gallery_item(storage, kind, entry_id, image_url):
     touch_entry(data, "alters" if kind == "alter" else "locations", entry_id)
     save_data(storage, data)
     return True, "Removed gallery image."
+
+
+def store_gallery_media_bytes(storage, kind, entry_id, filename, payload):
+    storage.write_bytes(media_storage_name(kind, entry_id, filename), payload)
+    return managed_media_url(kind, entry_id, filename)
+
+
+def import_gallery_media_from_url(storage, kind, entry_id, source_url):
+    source_url = str(source_url or "").strip()
+    if not source_url:
+        return False, "An image URL is required."
+    try:
+        with urllib.request.urlopen(source_url) as response:
+            payload = response.read()
+            content_type = response.headers.get_content_type()
+    except Exception as error:
+        return False, f"Failed to fetch image URL: {error}"
+    suffix = mimetypes.guess_extension(content_type or "") or Path(urllib.parse.urlparse(source_url).path).suffix.lower() or ".bin"
+    filename = f"{secrets.token_hex(12)}{suffix}"
+    return True, store_gallery_media_bytes(storage, kind, entry_id, filename, payload)
+
+
+def migrate_gallery_media(storage, data_root):
+    if isinstance(storage, LocalStorage):
+        return False
+    data = load_data(storage)
+    changed = False
+    local_storage = LocalStorage(data_root)
+    gallery_sets = []
+    for alter_id, profile in data["alter_profiles"].items():
+        gallery_sets.append(("alter", alter_id, profile.get("gallery", [])))
+    for location_id, gallery in data.get("location_galleries", {}).items():
+        gallery_sets.append(("location", location_id, gallery))
+    for kind, entry_id, gallery in gallery_sets:
+        updated = []
+        for item in gallery:
+            if is_managed_media_url(item):
+                media_name = media_name_from_url(item)
+                payload = local_storage.read_bytes(media_name)
+                if payload is not None and storage.read_bytes(media_name) is None:
+                    storage.write_bytes(media_name, payload)
+                    local_storage.delete_bytes(media_name)
+                updated.append(item)
+                continue
+            success, managed_url = import_gallery_media_from_url(storage, kind, entry_id, item)
+            if success:
+                updated.append(managed_url)
+                changed = True
+            else:
+                updated.append(item)
+        if kind == "alter":
+            data["alter_profiles"].setdefault(entry_id, legacy_profile())["gallery"] = updated
+        else:
+            data["location_galleries"][entry_id] = updated
+    if changed:
+        save_data(storage, data)
+    return changed
 
 
 def search_entries(data, kind, query, user_level=4):
