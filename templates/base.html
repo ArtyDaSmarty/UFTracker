@@ -124,6 +124,10 @@
       if (!(form instanceof HTMLFormElement) || !form.dataset.async) {
         return;
       }
+      const fileInputs = [...form.querySelectorAll('input[type="file"]')];
+      if (fileInputs.some((input) => input.files && input.files.length > 0)) {
+        return;
+      }
       event.preventDefault();
       handleAsyncFormSubmit(form, event.submitter || form.querySelector('[type="submit"]')).catch(() => {
         renderFlash('That action failed to complete.', 'error');
