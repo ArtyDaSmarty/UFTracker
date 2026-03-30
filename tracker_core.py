@@ -1251,6 +1251,20 @@ def format_affiliation_entries(data, entries):
     )
 
 
+def build_affiliation_links(data, entries):
+    linked = []
+    for item in entries:
+        affiliation_id = item["value"]
+        linked.append(
+            {
+                "id": affiliation_id,
+                "name": data["affiliations"].get(affiliation_id, affiliation_id),
+                "status": item["status"],
+            }
+        )
+    return linked
+
+
 def format_age(profile):
     value = profile.get("age", LEGACY_VALUE)
     return str(value) if isinstance(value, int) else value
@@ -1326,6 +1340,7 @@ def build_alter_view(data, alter_id, user_level=4):
     visible_location_id = data["location_bindings"].get(alter_id, "")
     if visible_location_id and not entry_is_accessible(data, "location", visible_location_id, user_level):
         visible_location_id = ""
+    visible_profile_affiliations = [item for item in profile.get("affiliations", []) if item["value"] in visible_affiliation_ids]
     return {
         "id": alter_id,
         "name": data["alters"][alter_id],
@@ -1343,8 +1358,8 @@ def build_alter_view(data, alter_id, user_level=4):
             ("Relationship Style", profile.get("relationship_style", LEGACY_VALUE)),
             ("Height", profile.get("height", LEGACY_VALUE)),
             ("Occupations/Roles", format_status_entries(profile.get("occupations", []))),
-            ("Affiliations", format_affiliation_entries(data, [item for item in profile.get("affiliations", []) if item["value"] in visible_affiliation_ids])),
         ],
+        "profile_affiliations": build_affiliation_links(data, visible_profile_affiliations),
         "location_id": visible_location_id,
         "location_name": data["locations"].get(visible_location_id, "Restricted" if data["location_bindings"].get(alter_id) else "None"),
         "relations": sorted(relations, key=lambda item: (item["label"].casefold(), item["other_name"].casefold())),
