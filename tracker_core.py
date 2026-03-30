@@ -387,6 +387,8 @@ def legacy_profile():
         "notes": [],
         "gallery": [],
         "gallery_locked": False,
+        "profile_locked": False,
+        "relations_locked": False,
     }
 
 
@@ -416,6 +418,12 @@ def load_users(storage):
         if "memory_tree_permission" not in user:
             user["memory_tree_permission"] = role == "admin"
             changed = True
+        if "profile_permission" not in user:
+            user["profile_permission"] = role == "admin"
+            changed = True
+        if "relation_permission" not in user:
+            user["relation_permission"] = role == "admin"
+            changed = True
         if "locked_gallery_permission" not in user:
             user["locked_gallery_permission"] = user.get("gallery_permission", role == "admin")
             changed = True
@@ -425,6 +433,8 @@ def load_users(storage):
         user.setdefault("active", True)
         if user["role"] == "admin":
             user["memory_tree_permission"] = True
+            user["profile_permission"] = True
+            user["relation_permission"] = True
             user["locked_gallery_permission"] = True
         if user["role"] == "admin" and not user["creation_permission"]:
             user["creation_permission"] = True
@@ -433,6 +443,8 @@ def load_users(storage):
         data["users"][0]["role"] = "admin"
         data["users"][0]["creation_permission"] = True
         data["users"][0]["memory_tree_permission"] = True
+        data["users"][0]["profile_permission"] = True
+        data["users"][0]["relation_permission"] = True
         data["users"][0]["locked_gallery_permission"] = True
         changed = True
     if changed:
@@ -591,6 +603,8 @@ def load_data(storage):
         profile["notes"] = normalize_notes(profile.get("notes", []))
         profile["gallery"] = [item for item in profile.get("gallery", []) if str(item).strip()]
         profile["gallery_locked"] = bool(profile.get("gallery_locked", False))
+        profile["profile_locked"] = bool(profile.get("profile_locked", False))
+        profile["relations_locked"] = bool(profile.get("relations_locked", False))
         if update_profile_birthday_age(profile):
             changed = True
 
@@ -727,6 +741,14 @@ def user_can_view_memory(user):
     return bool(user and (user.get("role") == "admin" or user.get("memory_tree_permission")))
 
 
+def user_can_view_profile(user):
+    return bool(user and (user.get("role") == "admin" or user.get("profile_permission")))
+
+
+def user_can_view_relations(user):
+    return bool(user and (user.get("role") == "admin" or user.get("relation_permission")))
+
+
 def user_can_view_gallery(user):
     return bool(user)
 
@@ -749,6 +771,30 @@ def can_view_gallery_for_entry(data, user, kind, entry_id):
     if not is_gallery_locked(data, kind, entry_id):
         return True
     return user_can_view_locked_gallery(user)
+
+
+def is_profile_locked(data, alter_id):
+    return bool(data["alter_profiles"].get(alter_id, {}).get("profile_locked", False))
+
+
+def is_relations_locked(data, alter_id):
+    return bool(data["alter_profiles"].get(alter_id, {}).get("relations_locked", False))
+
+
+def can_view_profile_for_entry(data, user, alter_id):
+    if not user:
+        return False
+    if not is_profile_locked(data, alter_id):
+        return True
+    return user_can_view_profile(user)
+
+
+def can_view_relations_for_entry(data, user, alter_id):
+    if not user:
+        return False
+    if not is_relations_locked(data, alter_id):
+        return True
+    return user_can_view_relations(user)
 
 
 def entry_is_accessible(data, kind, entry_id, user_level=None):
@@ -1147,6 +1193,22 @@ def set_gallery_locked(storage, kind, entry_id, locked):
     return True, "Gallery lock updated."
 
 
+def set_alter_section_lock(storage, alter_id, section, locked):
+    data = load_data(storage)
+    if alter_id not in data["alters"]:
+        return False, "Unknown alter."
+    profile = data["alter_profiles"].setdefault(alter_id, legacy_profile())
+    if section == "profile":
+        profile["profile_locked"] = bool(locked)
+    elif section == "relations":
+        profile["relations_locked"] = bool(locked)
+    else:
+        return False, "Unknown lock section."
+    touch_entry(data, "alters", alter_id)
+    save_data(storage, data)
+    return True, "Section lock updated."
+
+
 def remove_gallery_item(storage, kind, entry_id, image_url):
     data = load_data(storage)
     if kind == "alter":
@@ -1440,6 +1502,8 @@ def build_alter_view(data, alter_id, user_level=4):
         "notes": profile.get("notes", []),
         "gallery": list(profile.get("gallery", [])),
         "gallery_locked": bool(profile.get("gallery_locked", False)),
+        "profile_locked": bool(profile.get("profile_locked", False)),
+        "relations_locked": bool(profile.get("relations_locked", False)),
     }
 
 
