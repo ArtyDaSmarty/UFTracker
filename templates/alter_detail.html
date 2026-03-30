@@ -60,7 +60,7 @@
   <div class="card">
     <h3>Assignments</h3>
     {% if can_create_records %}
-    <form method="post" action="{{ url_for('update_alter_affiliations', alter_id=view.id) }}" class="stack compact" data-async="swap">
+    <form method="post" action="{{ url_for('update_alter_affiliations', alter_id=view.id) }}" class="stack compact">
       <label>Affiliation
         <input name="affiliation_id" list="affiliation-options" placeholder="Search by affiliation name or ID">
       </label>
@@ -75,7 +75,7 @@
       <option value="{{ entry_id }}" label="{{ name }} ({{ entry_id }})"></option>
       {% endfor %}
     </datalist>
-    <form method="post" action="{{ url_for('update_alter_occupations', alter_id=view.id) }}" class="stack compact" data-async="swap">
+    <form method="post" action="{{ url_for('update_alter_occupations', alter_id=view.id) }}" class="stack compact">
       <label>Occupation / Role<input name="occupation"></label>
       <label>Status<select name="status">{% for status in status_options %}<option value="{{ status }}">{{ status }}</option>{% endfor %}</select></label>
       <div class="button-row">
