@@ -71,9 +71,9 @@ button.primary:hover, .button-link:hover { background: var(--accent-2); }
 .prefix-block { display: grid; gap: 8px; }
 .inline-form-card { border: 1px solid var(--line); border-radius: 16px; padding: 12px; background: color-mix(in srgb, var(--card) 84%, var(--sidebar)); }
 .admin-links { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
-.gallery-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
-.gallery-card { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 16px; background: color-mix(in srgb, var(--card) 82%, var(--sidebar)); }
-.gallery-card img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 12px; border: 1px solid var(--line); background: var(--sidebar); }
+.gallery-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(180px, 240px)); justify-content: start; }
+.gallery-card { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 16px; background: color-mix(in srgb, var(--card) 82%, var(--sidebar)); align-content: start; }
+.gallery-card img { display: block; width: 100%; max-height: 220px; object-fit: contain; object-position: center top; border-radius: 12px; border: 1px solid var(--line); background: var(--sidebar); }
 @media (max-width: 1200px) {
   .cols-5, .cols-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .cols-4, .cols-2 { grid-template-columns: 1fr; }
