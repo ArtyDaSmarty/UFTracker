@@ -39,6 +39,7 @@ DEFAULT_SPECIAL_RELATION_TAGS = {"Parent": "Child", "Child": "Parent"}
 DEFAULT_ALTER_PREFIXES = ["UFA-"]
 DEFAULT_AFFILIATION_PREFIXES = ["AFF-"]
 LOCATION_PREFIX = "LOC-"
+DOCUMENT_PREFIX = "DOC-"
 LEGACY_VALUE = "LEGACY"
 STATUS_OPTIONS = ["Current", "Formerly", "Independent"]
 ROLE_OPTIONS = ["user", "mod", "admin"]
@@ -226,15 +227,17 @@ def tracker_default():
         "alters": {},
         "locations": {},
         "affiliations": {},
+        "documents": {},
         "relations": [],
         "location_bindings": {},
-        "last_modified": {"alters": {}, "locations": {}, "affiliations": {}},
+        "last_modified": {"alters": {}, "locations": {}, "affiliations": {}, "documents": {}},
         "relation_tags": list(DEFAULT_RELATION_TAGS),
         "special_relation_tags": dict(DEFAULT_SPECIAL_RELATION_TAGS),
         "alter_prefixes": list(DEFAULT_ALTER_PREFIXES),
         "affiliation_prefixes": list(DEFAULT_AFFILIATION_PREFIXES),
         "alter_profiles": {},
         "location_galleries": {},
+        "document_records": {},
     }
 
 
@@ -405,6 +408,16 @@ def legacy_profile():
     }
 
 
+def legacy_document():
+    return {
+        "format": "markdown",
+        "content": "",
+        "tags": [],
+        "ties": {"alters": [], "locations": [], "affiliations": [], "documents": []},
+        "document_locked": False,
+    }
+
+
 def load_users(storage):
     data = storage.read_json(USER_FILE, users_default())
     data.setdefault("users", [])
@@ -437,6 +450,9 @@ def load_users(storage):
         if "relation_permission" not in user:
             user["relation_permission"] = role == "admin"
             changed = True
+        if "document_permission" not in user:
+            user["document_permission"] = role == "admin"
+            changed = True
         if "locked_gallery_permission" not in user:
             user["locked_gallery_permission"] = user.get("gallery_permission", role == "admin")
             changed = True
@@ -448,6 +464,7 @@ def load_users(storage):
             user["memory_tree_permission"] = True
             user["profile_permission"] = True
             user["relation_permission"] = True
+            user["document_permission"] = True
             user["locked_gallery_permission"] = True
         if user["role"] == "admin" and not user["creation_permission"]:
             user["creation_permission"] = True
@@ -458,6 +475,7 @@ def load_users(storage):
         data["users"][0]["memory_tree_permission"] = True
         data["users"][0]["profile_permission"] = True
         data["users"][0]["relation_permission"] = True
+        data["users"][0]["document_permission"] = True
         data["users"][0]["locked_gallery_permission"] = True
         changed = True
     if changed:
@@ -528,6 +546,7 @@ def sync_saved_hashes_with_tracker(storage, data):
     hashes.update(data["alters"].keys())
     hashes.update(data["locations"].keys())
     hashes.update(data["affiliations"].keys())
+    hashes.update(data["documents"].keys())
     save_saved_hashes(storage, hashes)
     return hashes
 
@@ -537,9 +556,10 @@ def load_data(storage):
     data.setdefault("alters", {})
     data.setdefault("locations", {})
     data.setdefault("affiliations", {})
+    data.setdefault("documents", {})
     data.setdefault("relations", [])
     data.setdefault("location_bindings", {})
-    data.setdefault("last_modified", {"alters": {}, "locations": {}, "affiliations": {}})
+    data.setdefault("last_modified", {"alters": {}, "locations": {}, "affiliations": {}, "documents": {}})
     data.setdefault("relation_tags", list(DEFAULT_RELATION_TAGS))
     data.setdefault("special_relation_tags", dict(DEFAULT_SPECIAL_RELATION_TAGS))
     data.setdefault("alter_prefixes", list(DEFAULT_ALTER_PREFIXES))
@@ -547,9 +567,11 @@ def load_data(storage):
     data.setdefault("alter_profiles", {})
     data.setdefault("location_galleries", {})
     data.setdefault("location_gallery_locks", {})
+    data.setdefault("document_records", {})
     data["last_modified"].setdefault("alters", {})
     data["last_modified"].setdefault("locations", {})
     data["last_modified"].setdefault("affiliations", {})
+    data["last_modified"].setdefault("documents", {})
 
     data["relation_tags"] = unique_items(
         list(DEFAULT_RELATION_TAGS)
@@ -640,6 +662,30 @@ def load_data(storage):
         if affiliation_id not in data["last_modified"]["affiliations"]:
             data["last_modified"]["affiliations"][affiliation_id] = ""
             changed = True
+
+    for document_id in data["documents"]:
+        if document_id not in data["last_modified"]["documents"]:
+            data["last_modified"]["documents"][document_id] = ""
+            changed = True
+        record = data["document_records"].setdefault(document_id, legacy_document())
+        for key, default_value in legacy_document().items():
+            if key not in record:
+                record[key] = default_value
+                changed = True
+        record["format"] = "html" if str(record.get("format", "markdown")).strip().lower() == "html" else "markdown"
+        record["content"] = str(record.get("content", ""))
+        record["tags"] = [item.strip() for item in record.get("tags", []) if str(item).strip()]
+        ties = record.get("ties", {})
+        normalized_ties = {
+            "alters": [item for item in ties.get("alters", []) if item in data["alters"]],
+            "locations": [item for item in ties.get("locations", []) if item in data["locations"]],
+            "affiliations": [item for item in ties.get("affiliations", []) if item in data["affiliations"]],
+            "documents": [item for item in ties.get("documents", []) if item in data["documents"] and item != document_id],
+        }
+        if normalized_ties != ties:
+            changed = True
+        record["ties"] = normalized_ties
+        record["document_locked"] = bool(record.get("document_locked", False))
 
     if changed:
         save_data(storage, data)
@@ -741,6 +787,8 @@ def create_entry_with_level(storage, bucket_name, entity_label, name, entry_id, 
     elif bucket_name == "locations":
         data["location_galleries"].setdefault(entry_id, [])
         data.setdefault("location_gallery_locks", {})[entry_id] = False
+    elif bucket_name == "documents":
+        data["document_records"].setdefault(entry_id, legacy_document())
     save_data(storage, data)
     sync_saved_hashes_with_tracker(storage, data)
     return True, f"Created {entity_label}: {name} ({entry_id})"
@@ -760,6 +808,10 @@ def user_can_view_profile(user):
 
 def user_can_view_relations(user):
     return bool(user and (user.get("role") == "admin" or user.get("relation_permission")))
+
+
+def user_can_view_documents(user):
+    return bool(user and (user.get("role") == "admin" or user.get("document_permission")))
 
 
 def user_can_view_gallery(user):
@@ -810,14 +862,26 @@ def can_view_relations_for_entry(data, user, alter_id):
     return user_can_view_relations(user)
 
 
+def is_document_locked(data, document_id):
+    return bool(data["document_records"].get(document_id, {}).get("document_locked", False))
+
+
+def can_view_document_for_entry(data, user, document_id):
+    if not user:
+        return False
+    if not is_document_locked(data, document_id):
+        return True
+    return user_can_view_documents(user)
+
+
 def entry_is_accessible(data, kind, entry_id, user_level=None):
-    bucket_map = {"alter": "alters", "location": "locations", "affiliation": "affiliations"}
+    bucket_map = {"alter": "alters", "location": "locations", "affiliation": "affiliations", "document": "documents"}
     bucket_name = bucket_map[kind]
     return entry_id in data[bucket_name]
 
 
 def visible_entries(data, kind, user_level=None):
-    bucket_map = {"alter": "alters", "location": "locations", "affiliation": "affiliations"}
+    bucket_map = {"alter": "alters", "location": "locations", "affiliation": "affiliations", "document": "documents"}
     bucket_name = bucket_map[kind]
     return [
         (entry_id, name)
@@ -1240,9 +1304,80 @@ def remove_gallery_item(storage, kind, entry_id, image_url):
     return True, "Removed gallery image."
 
 
+def parse_document_tags(raw_value):
+    return [item.strip() for item in str(raw_value or "").split(",") if item.strip()]
+
+
+def resolve_document_ties(data, form):
+    return {
+        "alters": unique_items(
+            filter(
+                None,
+                [
+                    resolve_entry_reference(data, "alter", item, 0)
+                    for item in str(form.get("tie_alters", "")).split(",")
+                ],
+            )
+        ),
+        "locations": unique_items(
+            filter(
+                None,
+                [
+                    resolve_entry_reference(data, "location", item, 0)
+                    for item in str(form.get("tie_locations", "")).split(",")
+                ],
+            )
+        ),
+        "affiliations": unique_items(
+            filter(
+                None,
+                [
+                    resolve_entry_reference(data, "affiliation", item, 0)
+                    for item in str(form.get("tie_affiliations", "")).split(",")
+                ],
+            )
+        ),
+        "documents": unique_items(
+            filter(
+                None,
+                [
+                    resolve_entry_reference(data, "document", item, 0)
+                    for item in str(form.get("tie_documents", "")).split(",")
+                ],
+            )
+        ),
+    }
+
+
+def save_document_record(storage, document_id, form):
+    data = load_data(storage)
+    if document_id not in data["documents"]:
+        return False, "Unknown document."
+    record = data["document_records"].setdefault(document_id, legacy_document())
+    record["format"] = "html" if str(form.get("document_format", "markdown")).strip().lower() == "html" else "markdown"
+    record["content"] = str(form.get("content", "") or "")
+    record["tags"] = parse_document_tags(form.get("tags", ""))
+    ties = resolve_document_ties(data, form)
+    ties["documents"] = [item for item in ties["documents"] if item != document_id]
+    record["ties"] = ties
+    touch_entry(data, "documents", document_id)
+    save_data(storage, data)
+    return True, "Saved document."
+
+
+def set_document_locked(storage, document_id, locked):
+    data = load_data(storage)
+    if document_id not in data["documents"]:
+        return False, "Unknown document."
+    data["document_records"].setdefault(document_id, legacy_document())["document_locked"] = bool(locked)
+    touch_entry(data, "documents", document_id)
+    save_data(storage, data)
+    return True, "Document lock updated."
+
+
 def delete_entry(storage, kind, entry_id):
     data = load_data(storage)
-    bucket_map = {"alter": "alters", "location": "locations", "affiliation": "affiliations"}
+    bucket_map = {"alter": "alters", "location": "locations", "affiliation": "affiliations", "document": "documents"}
     if kind not in bucket_map:
         return False, "Unknown entry type."
     bucket_name = bucket_map[kind]
@@ -1269,10 +1404,18 @@ def delete_entry(storage, kind, entry_id):
         }
         data["last_modified"]["locations"].pop(entry_id, None)
     else:
-        data["affiliations"].pop(entry_id, None)
-        for profile in data["alter_profiles"].values():
-            profile["affiliations"] = [item for item in profile.get("affiliations", []) if item["value"] != entry_id]
-        data["last_modified"]["affiliations"].pop(entry_id, None)
+        if kind == "affiliation":
+            data["affiliations"].pop(entry_id, None)
+            for profile in data["alter_profiles"].values():
+                profile["affiliations"] = [item for item in profile.get("affiliations", []) if item["value"] != entry_id]
+            data["last_modified"]["affiliations"].pop(entry_id, None)
+        else:
+            data["documents"].pop(entry_id, None)
+            data["document_records"].pop(entry_id, None)
+            for record in data["document_records"].values():
+                ties = record.get("ties", {})
+                ties["documents"] = [item for item in ties.get("documents", []) if item != entry_id]
+            data["last_modified"]["documents"].pop(entry_id, None)
 
     save_data(storage, data)
     return True, f"Removed {kind} entry."
@@ -1342,6 +1485,10 @@ def search_entries(data, kind, query, user_level=4):
         haystacks = [name.casefold()]
         if kind == "alter":
             haystacks.extend(alias.casefold() for alias in data["alter_profiles"].get(entry_id, {}).get("aliases", []))
+        elif kind == "document":
+            record = data["document_records"].get(entry_id, legacy_document())
+            haystacks.extend(tag.casefold() for tag in record.get("tags", []))
+            haystacks.append(str(record.get("content", "")).casefold())
         if not query or any(query in item for item in haystacks):
             matches.append((entry_id, name))
     return sorted(matches, key=lambda item: item[1].casefold())
@@ -1417,7 +1564,7 @@ def format_age(profile):
 
 def build_recent_changes(data, user_level=4, limit=12):
     recent = []
-    for kind, bucket_name, label in (("alter", "alters", "Alter"), ("location", "locations", "Location"), ("affiliation", "affiliations", "Affiliation")):
+    for kind, bucket_name, label in (("alter", "alters", "Alter"), ("location", "locations", "Location"), ("affiliation", "affiliations", "Affiliation"), ("document", "documents", "Document")):
         for entry_id, name in data[bucket_name].items():
             if not entry_is_accessible(data, kind, entry_id, user_level):
                 continue
@@ -1438,6 +1585,7 @@ def build_dashboard_context(data, user_level=4):
     alters = sorted(visible_entries(data, "alter", user_level), key=lambda item: item[1].casefold())
     locations = sorted(visible_entries(data, "location", user_level), key=lambda item: item[1].casefold())
     affiliations = sorted(visible_entries(data, "affiliation", user_level), key=lambda item: item[1].casefold())
+    documents = sorted(visible_entries(data, "document", user_level), key=lambda item: item[1].casefold())
     relations = sorted(
         [
             item for item in data["relations"]
@@ -1454,6 +1602,7 @@ def build_dashboard_context(data, user_level=4):
         "alters": alters,
         "locations": locations,
         "affiliations": affiliations,
+        "documents": documents,
         "relations": relations,
         "tags": get_available_relation_tags(data),
         "recent_changes": build_recent_changes(data, user_level),
@@ -1555,6 +1704,36 @@ def build_affiliation_view(data, affiliation_id, user_level=4):
         "name": data["affiliations"][affiliation_id],
         "current_members": sorted(current_members, key=lambda item: item["name"].casefold()),
         "former_members": sorted(former_members, key=lambda item: item["name"].casefold()),
+    }
+
+
+def build_document_view(data, document_id, user_level=4):
+    if not entry_is_accessible(data, "document", document_id, user_level):
+        return None
+    record = data["document_records"].get(document_id, legacy_document())
+    ties = record.get("ties", {})
+    return {
+        "id": document_id,
+        "name": data["documents"][document_id],
+        "record": record,
+        "tags_text": ", ".join(record.get("tags", [])),
+        "ties": {
+            "alters": [{"id": item, "name": data["alters"][item]} for item in ties.get("alters", []) if item in data["alters"]],
+            "locations": [{"id": item, "name": data["locations"][item]} for item in ties.get("locations", []) if item in data["locations"]],
+            "affiliations": [{"id": item, "name": data["affiliations"][item]} for item in ties.get("affiliations", []) if item in data["affiliations"]],
+            "documents": [{"id": item, "name": data["documents"][item]} for item in ties.get("documents", []) if item in data["documents"]],
+        },
+        "tie_inputs": {
+            "alters": ", ".join(ties.get("alters", [])),
+            "locations": ", ".join(ties.get("locations", [])),
+            "affiliations": ", ".join(ties.get("affiliations", [])),
+            "documents": ", ".join(ties.get("documents", [])),
+        },
+        "document_locked": bool(record.get("document_locked", False)),
+        "alters": sorted(visible_entries(data, "alter", user_level), key=lambda item: item[1].casefold()),
+        "locations": sorted(visible_entries(data, "location", user_level), key=lambda item: item[1].casefold()),
+        "affiliations": sorted(visible_entries(data, "affiliation", user_level), key=lambda item: item[1].casefold()),
+        "documents": sorted([(entry_id, name) for entry_id, name in visible_entries(data, "document", user_level) if entry_id != document_id], key=lambda item: item[1].casefold()),
     }
 
 

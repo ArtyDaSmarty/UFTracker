@@ -4,11 +4,18 @@ import logging
 from pathlib import Path
 
 from flask import Flask, Response, flash, g, has_request_context, jsonify, redirect, render_template, request, session, url_for
+from markupsafe import Markup, escape
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 
+try:
+    import markdown as markdown_lib
+except ImportError:  # pragma: no cover
+    markdown_lib = None
+
 from tracker_core import (
     DATA_FILE,
+    DOCUMENT_PREFIX,
     GENDER_OPTIONS,
     HASH_FILE,
     LEGACY_VALUE,
@@ -26,7 +33,9 @@ from tracker_core import (
     build_alter_view,
     build_affiliation_view,
     build_dashboard_context,
+    build_document_view,
     build_location_view,
+    can_view_document_for_entry,
     can_view_gallery_for_entry,
     can_view_profile_for_entry,
     can_view_relations_for_entry,
@@ -66,11 +75,13 @@ from tracker_core import (
     resolve_entry_reference,
     rename_entry,
     save_alter_profile,
+    save_document_record,
     save_site_settings,
     save_storage_settings,
     save_uploaded_json,
     save_users,
     search_entries,
+    set_document_locked,
     set_alter_section_lock,
     set_gallery_locked,
     set_relation_tag,
@@ -80,6 +91,7 @@ from tracker_core import (
     update_occupation_entry,
     user_can_create,
     user_can_view_gallery,
+    user_can_view_documents,
     user_can_view_locked_gallery,
     user_can_view_memory,
     user_can_view_profile,
@@ -94,6 +106,15 @@ migrate_legacy_local_files(APP_DIR, DATA_DIR)
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "change-me-for-production")
 logger = logging.getLogger(__name__)
+
+
+def render_document_content(document_format, content):
+    content = str(content or "")
+    if document_format == "html":
+        return Markup(content)
+    if markdown_lib is not None:
+        return Markup(markdown_lib.markdown(content, extensions=["extra", "sane_lists"]))
+    return Markup(f"<pre>{escape(content)}</pre>")
 
 
 def initialize_storage():
@@ -262,6 +283,7 @@ def inject_globals():
         "can_manage_tracker": can_manage_tracker(),
         "can_create_records": can_manage_tracker(),
         "can_view_memory": user_can_view_memory(user),
+        "can_view_documents": user_can_view_documents(user),
         "can_view_profile": user_can_view_profile(user),
         "can_view_relations": user_can_view_relations(user),
         "can_view_gallery": user_can_view_gallery(user),
@@ -411,6 +433,7 @@ def register():
             "memory_tree_permission": role == "admin",
             "profile_permission": role == "admin",
             "relation_permission": role == "admin",
+            "document_permission": role == "admin",
             "locked_gallery_permission": role == "admin",
             "active": True,
         }
@@ -458,6 +481,7 @@ def dashboard():
             "alters": len(context["alters"]),
             "locations": len(context["locations"]),
             "affiliations": len(context["affiliations"]),
+            "documents": len(context["documents"]),
             "relations": len(context["relations"]),
             "tags": len(context["tags"]),
         },
@@ -487,6 +511,8 @@ def generate_id(kind):
                 return jsonify({"ok": False, "message": "Unknown affiliation prefix.", "category": "error"}), 400
             flash("Unknown affiliation prefix.", "error")
             return redirect(url_for("dashboard"))
+    elif kind == "document":
+        prefix = DOCUMENT_PREFIX if prefix != "" else ""
     else:
         if is_async_request():
             return jsonify({"ok": False, "message": "Unknown ID type.", "category": "error"}), 400
@@ -512,8 +538,12 @@ def create_record(kind):
         entry_id = generate_unique_hash(storage, LOCATION_PREFIX)
     elif kind == "affiliation" and not entry_id:
         entry_id = generate_unique_hash(storage, data["affiliation_prefixes"][0] if data["affiliation_prefixes"] else "")
-    bucket_map = {"alter": ("alters", "alter"), "location": ("locations", "location"), "affiliation": ("affiliations", "affiliation")}
+    elif kind == "document" and not entry_id:
+        entry_id = generate_unique_hash(storage, DOCUMENT_PREFIX)
+    bucket_map = {"alter": ("alters", "alter"), "location": ("locations", "location"), "affiliation": ("affiliations", "affiliation"), "document": ("documents", "document")}
     success, message = create_entry_with_level(storage, bucket_map[kind][0], bucket_map[kind][1], name, entry_id, None)
+    if success and kind == "document":
+        save_document_record(storage, entry_id, request.form)
     flash(message, "success" if success else "error")
     return redirect(url_for("dashboard"))
 
@@ -570,6 +600,7 @@ def search():
         "alters": search_entries(data, "alter", query, current_user_level()),
         "locations": search_entries(data, "location", query, current_user_level()),
         "affiliations": search_entries(data, "affiliation", query, current_user_level()),
+        "documents": search_entries(data, "document", query, current_user_level()),
     }
     total_results = sum(len(items) for items in grouped_results.values())
     return render_template("search_results.html", query=query, grouped_results=grouped_results, total_results=total_results)
@@ -870,6 +901,55 @@ def affiliation_detail(affiliation_id):
     return render_template("affiliation_detail.html", view=view)
 
 
+@app.route("/document/<document_id>")
+@login_required
+def document_detail(document_id):
+    data = get_tracker_data()
+    view = build_document_view(data, document_id, current_user_level())
+    if not view:
+        flash("Unknown or inaccessible document.", "error")
+        return redirect(url_for("dashboard"))
+    return render_template(
+        "document_detail.html",
+        view=view,
+        can_view_document=can_view_document_for_entry(data, current_user(), document_id),
+        rendered_content=render_document_content(view["record"]["format"], view["record"]["content"]),
+    )
+
+
+@app.route("/document/<document_id>/save", methods=["POST"])
+@login_required
+@tracker_write_required
+def save_document(document_id):
+    data = get_tracker_data()
+    if not entry_is_accessible(data, "document", document_id, current_user_level()):
+        flash("You do not have access to that document.", "error")
+        return redirect(url_for("dashboard"))
+    if not can_view_document_for_entry(data, current_user(), document_id):
+        flash("You do not have permission to view that locked document.", "error")
+        return redirect(url_for("document_detail", document_id=document_id))
+    success, message = rename_entry(storage, "documents", "document", document_id, request.form.get("name", ""))
+    if success:
+        success, message = save_document_record(storage, document_id, request.form)
+    flash(message, "success" if success else "error")
+    clear_request_caches()
+    return redirect(url_for("document_detail", document_id=document_id))
+
+
+@app.route("/document-lock/<document_id>", methods=["POST"])
+@login_required
+@tracker_write_required
+def update_document_lock(document_id):
+    data = get_tracker_data()
+    if not entry_is_accessible(data, "document", document_id, current_user_level()):
+        flash("You do not have access to that document.", "error")
+        return redirect(url_for("dashboard"))
+    success, message = set_document_locked(storage, document_id, request.form.get("document_locked") == "on")
+    flash(message, "success" if success else "error")
+    clear_request_caches()
+    return redirect(url_for("document_detail", document_id=document_id))
+
+
 @app.route("/rename/<kind>/<entry_id>", methods=["POST"])
 @login_required
 @tracker_write_required
@@ -928,6 +1008,8 @@ def admin_users():
                 user["profile_permission"] = request.form.get("profile_permission") == "on"
             elif action == "relations" and user.get("role") != "admin":
                 user["relation_permission"] = request.form.get("relation_permission") == "on"
+            elif action == "document" and user.get("role") != "admin":
+                user["document_permission"] = request.form.get("document_permission") == "on"
             elif action == "locked_gallery" and user.get("role") != "admin":
                 user["locked_gallery_permission"] = request.form.get("locked_gallery_permission") == "on"
             elif action == "active":

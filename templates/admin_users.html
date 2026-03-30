@@ -2,7 +2,7 @@
 {% block content %}
 <section class="card">
   <h2>User Management</h2>
-  <p class="muted">Admins always keep full access. For everyone else, you can control creation access, Memory Tree access, Profile Lock access, Relation Lock access, and Locked Galleries access directly.</p>
+  <p class="muted">Admins always keep full access. For everyone else, you can control creation access, Memory Tree access, Profile Lock access, Relation Lock access, Document Lock access, and Locked Galleries access directly.</p>
   {% for user in users %}
   <form method="post" class="stack compact bordered">
     <input type="hidden" name="user_id" value="{{ user.id }}">

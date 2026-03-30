@@ -292,6 +292,20 @@ button.primary:hover, .button-link:hover { filter: brightness(1.08); }
 .drag-handle { color: var(--muted); cursor: grab; user-select: none; }
 .timeline-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .note-entry .timeline-entry-head { justify-content: flex-start; }
+.document-body {
+  overflow-wrap: anywhere;
+}
+.document-body pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--card) 86%, var(--sidebar));
+}
+.document-body code {
+  font-family: inherit;
+}
 
 @media (max-width: 1200px) {
   .cols-5, .cols-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }

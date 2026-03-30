@@ -38,7 +38,7 @@
       {% if current_user %}
       <section class="search-shell">
         <form method="get" action="{{ url_for('search') }}" class="global-search">
-          <input name="q" value="{{ request.args.get('q', '') if request.endpoint == 'search' else '' }}" placeholder="Search any alter, location, or affiliation by name or ID">
+          <input name="q" value="{{ request.args.get('q', '') if request.endpoint == 'search' else '' }}" placeholder="Search any alter, location, affiliation, or document by name, ID, or document text">
           <button class="primary">Search</button>
         </form>
       </section>
