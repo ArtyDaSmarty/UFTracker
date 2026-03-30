@@ -67,6 +67,7 @@ from tracker_core import (
     migrate_gallery_media,
     migrate_legacy_local_files,
     remove_affiliation_membership,
+    remove_affiliation_timeline_entry,
     remove_gallery_item,
     remove_memory_entry,
     remove_note_entry,
@@ -75,6 +76,7 @@ from tracker_core import (
     resolve_entry_reference,
     rename_entry,
     save_alter_profile,
+    save_affiliation_summary,
     save_document_record,
     save_site_settings,
     save_storage_settings,
@@ -88,6 +90,7 @@ from tracker_core import (
     update_memory_tree,
     update_notes,
     update_affiliation_membership,
+    update_affiliation_timeline,
     update_occupation_entry,
     user_can_create,
     user_can_view_gallery,
@@ -898,7 +901,46 @@ def affiliation_detail(affiliation_id):
     if not view:
         flash("Unknown or inaccessible affiliation.", "error")
         return redirect(url_for("dashboard"))
-    return render_template("affiliation_detail.html", view=view)
+    return render_template("affiliation_detail.html", view=view, can_view_memory=user_can_view_memory(current_user()))
+
+
+@app.route("/affiliation/<affiliation_id>/summary", methods=["POST"])
+@login_required
+@tracker_write_required
+def update_affiliation_summary(affiliation_id):
+    if not entry_is_accessible(get_tracker_data(), "affiliation", affiliation_id, current_user_level()):
+        flash("You do not have access to that affiliation.", "error")
+        return redirect(url_for("dashboard"))
+    success, message = save_affiliation_summary(storage, affiliation_id, request.form.get("summary", ""))
+    flash(message, "success" if success else "error")
+    clear_request_caches()
+    return redirect(url_for("affiliation_detail", affiliation_id=affiliation_id))
+
+
+@app.route("/affiliation/<affiliation_id>/timeline", methods=["POST"])
+@login_required
+@tracker_write_required
+def update_affiliation_timeline_route(affiliation_id):
+    if not user_can_view_memory(current_user()):
+        flash("You do not have permission to view timelines.", "error")
+        return redirect(url_for("affiliation_detail", affiliation_id=affiliation_id))
+    if not entry_is_accessible(get_tracker_data(), "affiliation", affiliation_id, current_user_level()):
+        flash("You do not have access to that affiliation.", "error")
+        return redirect(url_for("dashboard"))
+    entry_id = request.form.get("entry_id", "").strip()
+    if request.form.get("action") == "remove":
+        success, message = remove_affiliation_timeline_entry(storage, affiliation_id, entry_id)
+    else:
+        success, message = update_affiliation_timeline(
+            storage,
+            affiliation_id,
+            request.form.get("timeline_date", ""),
+            request.form.get("timeline_text", ""),
+            request.form.getlist("ordered_ids"),
+        )
+    flash(message, "success" if success else "error")
+    clear_request_caches()
+    return redirect(url_for("affiliation_detail", affiliation_id=affiliation_id))
 
 
 @app.route("/document/<document_id>")
