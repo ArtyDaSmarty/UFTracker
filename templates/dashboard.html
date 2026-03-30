@@ -60,6 +60,15 @@
       </label>
       <button class="primary">Create Affiliation</button>
     </form>
+    <form method="post" action="{{ url_for('generate_id', kind='affiliation') }}" class="stack compact top-gap inline-form-card">
+      <label>Generate Affiliation ID Prefix
+        <select name="prefix">
+          <option value="">No Prefix</option>
+          {% for prefix in affiliation_prefixes %}<option value="{{ prefix }}">{{ prefix }}</option>{% endfor %}
+        </select>
+      </label>
+      <button type="submit">Generate Affiliation ID</button>
+    </form>
     {% else %}
     <p class="muted">This account is search and inquiry only.</p>
     {% endif %}
