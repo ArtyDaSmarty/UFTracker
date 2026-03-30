@@ -36,6 +36,7 @@ HASH_FILE = "saved_hashes.json"
 USER_FILE = "users.json"
 AFFILIATION_PREFIX_FILE = "affiliation_prefixes.json"
 STORAGE_SETTINGS_FILE = "storage_settings.json"
+SITE_SETTINGS_FILE = "site_settings.json"
 DEFAULT_RELATION_TAGS = ["NONE", "Sibling", "Friend", "Partner", "Spouse"]
 DEFAULT_SPECIAL_RELATION_TAGS = {"Parent": "Child", "Child": "Parent"}
 DEFAULT_ALTER_PREFIXES = ["UFA-"]
@@ -293,6 +294,13 @@ def storage_settings_default():
     }
 
 
+def site_settings_default():
+    return {
+        "site_name": "United Front Technical Database",
+        "favicon_name": "",
+    }
+
+
 def get_settings_fernet():
     secret = os.getenv("STORAGE_SETTINGS_KEY") or os.getenv("SECRET_KEY", "change-me-for-production")
     if Fernet is None:
@@ -362,11 +370,33 @@ def save_storage_settings(root, settings):
     _drop_cached("storage_settings", str(root))
 
 
+def load_site_settings(root):
+    path = Path(root) / SITE_SETTINGS_FILE
+    if not path.exists():
+        return site_settings_default()
+    try:
+        with path.open("r", encoding="utf-8") as file:
+            data = json.load(file)
+    except (json.JSONDecodeError, OSError):
+        return site_settings_default()
+    settings = site_settings_default()
+    settings.update({key: data.get(key, value) for key, value in settings.items()})
+    return settings
+
+
+def save_site_settings(root, settings):
+    path = Path(root) / SITE_SETTINGS_FILE
+    payload = site_settings_default()
+    payload.update({key: settings.get(key, value) for key, value in payload.items()})
+    with path.open("w", encoding="utf-8") as file:
+        json.dump(payload, file, indent=2)
+
+
 def migrate_legacy_local_files(source_root, destination_root):
     source_root = Path(source_root)
     destination_root = Path(destination_root)
     destination_root.mkdir(parents=True, exist_ok=True)
-    filenames = [DATA_FILE, HASH_FILE, USER_FILE, STORAGE_SETTINGS_FILE]
+    filenames = [DATA_FILE, HASH_FILE, USER_FILE, STORAGE_SETTINGS_FILE, SITE_SETTINGS_FILE]
     for filename in filenames:
         source_path = source_root / filename
         destination_path = destination_root / filename
@@ -1209,6 +1239,46 @@ def remove_gallery_item(storage, kind, entry_id, image_url):
     touch_entry(data, "alters" if kind == "alter" else "locations", entry_id)
     save_data(storage, data)
     return True, "Removed gallery image."
+
+
+def delete_entry(storage, kind, entry_id):
+    data = load_data(storage)
+    bucket_map = {"alter": "alters", "location": "locations", "affiliation": "affiliations"}
+    if kind not in bucket_map:
+        return False, "Unknown entry type."
+    bucket_name = bucket_map[kind]
+    if entry_id not in data[bucket_name]:
+        return False, "That entry was not found."
+
+    if kind == "alter":
+        data["alters"].pop(entry_id, None)
+        data["alter_profiles"].pop(entry_id, None)
+        data["location_bindings"].pop(entry_id, None)
+        data["relations"] = [
+            relation for relation in data["relations"]
+            if relation["source_id"] != entry_id and relation["target_id"] != entry_id
+        ]
+        data["entry_levels"]["alters"].pop(entry_id, None)
+        data["last_modified"]["alters"].pop(entry_id, None)
+    elif kind == "location":
+        data["locations"].pop(entry_id, None)
+        data["location_galleries"].pop(entry_id, None)
+        data["location_bindings"] = {
+            alter_id: location_id
+            for alter_id, location_id in data["location_bindings"].items()
+            if location_id != entry_id
+        }
+        data["entry_levels"]["locations"].pop(entry_id, None)
+        data["last_modified"]["locations"].pop(entry_id, None)
+    else:
+        data["affiliations"].pop(entry_id, None)
+        for profile in data["alter_profiles"].values():
+            profile["affiliations"] = [item for item in profile.get("affiliations", []) if item["value"] != entry_id]
+        data["entry_levels"]["affiliations"].pop(entry_id, None)
+        data["last_modified"]["affiliations"].pop(entry_id, None)
+
+    save_data(storage, data)
+    return True, f"Removed {kind} entry."
 
 
 def store_gallery_media_bytes(storage, kind, entry_id, filename, payload):
