@@ -3,13 +3,16 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}United Front Technical Database{% endblock %}</title>
+  <title>{% block title %}{{ site_name }}{% endblock %}</title>
+  {% if favicon_url %}
+  <link rel="icon" href="{{ favicon_url }}">
+  {% endif %}
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
   <div class="shell">
     <aside class="sidebar">
-      <h1>United Front Technical Database</h1>
+      <h1>{{ site_name }}</h1>
       {% if current_user %}
       <p class="muted">{{ current_user.username }} | Level {{ current_level }} | {{ current_role|upper }}</p>
       <nav>
