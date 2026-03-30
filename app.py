@@ -603,9 +603,13 @@ def update_alter_affiliations(alter_id):
     if not entry_is_accessible(data, "alter", alter_id, user_level):
         flash("You do not have access to that alter.", "error")
         return redirect(url_for("dashboard"))
+    status = request.form.get("status", "Current").strip()
+    is_independent = status.casefold() == "independent"
     affiliation_id = resolve_entry_reference(data, "affiliation", request.form.get("affiliation_id", ""), user_level)
-    status = request.form.get("status", "Current")
-    if status != "Independent" and affiliation_id and not entry_is_accessible(data, "affiliation", affiliation_id, user_level):
+    if is_independent:
+        affiliation_id = ""
+        status = "Independent"
+    if not is_independent and affiliation_id and not entry_is_accessible(data, "affiliation", affiliation_id, user_level):
         flash("You do not have access to that affiliation.", "error")
         return redirect(url_for("alter_detail", alter_id=alter_id))
     if request.form.get("action") == "remove":
