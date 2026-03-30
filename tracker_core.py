@@ -950,9 +950,10 @@ def update_affiliation_membership(storage, alter_id, affiliation_id, status):
     data = load_data(storage)
     if alter_id not in data["alters"] or affiliation_id not in data["affiliations"]:
         return False, "Alter and affiliation must exist."
+    status = status if status in STATUS_OPTIONS else STATUS_OPTIONS[0]
     profile = data["alter_profiles"].setdefault(alter_id, legacy_profile())
     profile["affiliations"] = [item for item in profile["affiliations"] if item["value"] != affiliation_id]
-    profile["affiliations"].append({"value": affiliation_id, "status": status if status in STATUS_OPTIONS else STATUS_OPTIONS[0]})
+    profile["affiliations"].append({"value": affiliation_id, "status": status})
     touch_entry(data, "alters", alter_id)
     touch_entry(data, "affiliations", affiliation_id)
     save_data(storage, data)
@@ -1316,7 +1317,7 @@ def format_affiliation_entries(data, entries):
     if not entries:
         return LEGACY_VALUE
     return "; ".join(
-        f'{data["affiliations"].get(item["value"], item["value"])} ({item["value"]}) [{item["status"]}]'
+        f'{data["affiliations"].get(item["value"], item["value"])} [{item["status"]}]'
         for item in entries
     )
 
@@ -1330,6 +1331,7 @@ def build_affiliation_links(data, entries):
                 "id": affiliation_id,
                 "name": data["affiliations"].get(affiliation_id, affiliation_id),
                 "status": item["status"],
+                "is_linkable": True,
             }
         )
     return linked
