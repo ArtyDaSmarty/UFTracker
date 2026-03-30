@@ -249,7 +249,7 @@ def legacy_profile():
         "species": LEGACY_VALUE,
         "age": LEGACY_VALUE,
         "birthday_month": None,
-        "birthday_year": None,
+        "birthday_day": None,
         "birthday_last_processed_year": None,
         "gender": LEGACY_VALUE,
         "reproductive_organ": LEGACY_VALUE,
@@ -342,12 +342,13 @@ def normalize_status_entries(entries):
 
 def update_profile_birthday_age(profile):
     month = profile.get("birthday_month")
+    day = profile.get("birthday_day")
     age = profile.get("age")
-    if month is None or not isinstance(age, int):
+    if month is None or day is None or not isinstance(age, int):
         return False
     today = date.today()
     last_processed = profile.get("birthday_last_processed_year")
-    if (today.month, today.day) >= (month, 1) and last_processed != today.year:
+    if (today.month, today.day) >= (month, day) and last_processed != today.year:
         profile["age"] = age + 1
         profile["birthday_last_processed_year"] = today.year
         return True
@@ -432,6 +433,16 @@ def load_data(storage):
             if key not in profile:
                 profile[key] = default_value
                 changed = True
+        if profile.get("birthday_day") is None:
+            legacy_day = profile.get("birthday_year")
+            if isinstance(legacy_day, int) and 1 <= legacy_day <= 31:
+                profile["birthday_day"] = legacy_day
+            else:
+                profile["birthday_day"] = None
+            changed = True
+        if "birthday_year" in profile:
+            profile.pop("birthday_year", None)
+            changed = True
         profile["occupations"] = normalize_status_entries(profile.get("occupations"))
         profile["affiliations"] = normalize_status_entries(profile.get("affiliations"))
         profile["gallery"] = [item for item in profile.get("gallery", []) if str(item).strip()]
@@ -730,18 +741,21 @@ def save_alter_profile(storage, alter_id, form):
     else:
         profile["age"] = LEGACY_VALUE
     birthday_month = form.get("birthday_month", "")
-    birthday_year = form.get("birthday_year", "").strip()
-    if birthday_month and birthday_year:
-        if birthday_month not in MONTH_OPTIONS or not birthday_year.isdigit():
-            return False, "Birthday month/year is invalid."
+    birthday_day = form.get("birthday_day", "").strip()
+    if birthday_month and birthday_day:
+        if birthday_month not in MONTH_OPTIONS or not birthday_day.isdigit():
+            return False, "Birthday month/day is invalid."
         month = MONTH_OPTIONS.index(birthday_month) + 1
+        day = int(birthday_day)
+        if day < 1 or day > 31:
+            return False, "Birthday day must be between 1 and 31."
         profile["birthday_month"] = month
-        profile["birthday_year"] = int(birthday_year)
+        profile["birthday_day"] = day
         today = date.today()
-        profile["birthday_last_processed_year"] = today.year if (today.month, today.day) >= (month, 1) else today.year - 1
+        profile["birthday_last_processed_year"] = today.year if (today.month, today.day) >= (month, day) else today.year - 1
     else:
         profile["birthday_month"] = None
-        profile["birthday_year"] = None
+        profile["birthday_day"] = None
         profile["birthday_last_processed_year"] = None
     profile["gender"] = form.get("gender", "") or LEGACY_VALUE
     profile["reproductive_organ"] = form.get("reproductive_organ", "") or LEGACY_VALUE
@@ -937,10 +951,10 @@ def format_aliases(profile):
 
 def birthday_summary(profile):
     month = profile.get("birthday_month")
-    year = profile.get("birthday_year")
-    if month is None or year in (None, ""):
+    day = profile.get("birthday_day")
+    if month is None or day in (None, ""):
         return LEGACY_VALUE
-    return f"{MONTH_OPTIONS[month - 1]} {year}"
+    return f"{MONTH_OPTIONS[month - 1]} {day}"
 
 
 def format_status_entries(entries):
