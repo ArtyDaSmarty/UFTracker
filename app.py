@@ -555,12 +555,20 @@ def admin_users():
 @login_required
 @roles_required("admin")
 def admin_storage():
+    current_settings = load_storage_settings(DATA_DIR)
     if request.method == "POST":
         action = request.form.get("action", "save")
+        access_key = request.form.get("s3_access_key", "").strip()
+        secret_key = request.form.get("s3_secret_key", "").strip()
         settings = {
             "backend": request.form.get("backend", "local").strip().lower(),
+            "s3_endpoint": request.form.get("s3_endpoint", "").strip(),
             "s3_bucket": request.form.get("s3_bucket", "").strip(),
+            "s3_region": request.form.get("s3_region", "auto").strip() or "auto",
+            "s3_access_key": access_key or current_settings.get("s3_access_key", ""),
+            "s3_secret_key": secret_key or current_settings.get("s3_secret_key", ""),
             "s3_prefix": request.form.get("s3_prefix", "").strip(),
+            "s3_path_style": request.form.get("s3_path_style") == "on",
         }
         if settings["backend"] not in {"local", "s3"}:
             flash("Storage backend must be local or s3.", "error")
@@ -593,9 +601,15 @@ def admin_storage():
     return render_template(
         "admin_storage.html",
         backend=settings.get("backend", "local"),
+        endpoint=settings.get("s3_endpoint", ""),
         bucket=settings.get("s3_bucket", ""),
+        region=settings.get("s3_region", "auto"),
         prefix=settings.get("s3_prefix", ""),
+        path_style=settings.get("s3_path_style", False),
+        has_access_key=bool(settings.get("s3_access_key")),
+        has_secret_key=bool(settings.get("s3_secret_key")),
         config_file=STORAGE_SETTINGS_FILE,
+        data_dir=str(DATA_DIR),
     )
 
 

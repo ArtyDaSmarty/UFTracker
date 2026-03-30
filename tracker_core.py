@@ -1,16 +1,27 @@
 import json
+import os
 import secrets
 import shutil
 import string
+from base64 import urlsafe_b64encode
 from datetime import date
+from hashlib import sha256
 from pathlib import Path
 
 try:
     import boto3
+    from botocore.config import Config
     from botocore.exceptions import ClientError
 except ImportError:  # pragma: no cover
     boto3 = None
+    Config = None
     ClientError = Exception
+
+try:
+    from cryptography.fernet import Fernet, InvalidToken
+except ImportError:  # pragma: no cover
+    Fernet = None
+    InvalidToken = Exception
 
 
 DATA_FILE = "relationship_data.json"
@@ -60,12 +71,23 @@ class LocalStorage:
 
 
 class S3Storage:
-    def __init__(self, bucket, prefix=""):
+    def __init__(self, bucket, prefix="", endpoint="", region="", access_key="", secret_key="", path_style=False):
         if boto3 is None:
             raise RuntimeError("boto3 is required for S3 storage.")
         self.bucket = bucket
         self.prefix = prefix.strip("/")
-        self.client = boto3.client("s3")
+        client_kwargs = {}
+        if endpoint:
+            client_kwargs["endpoint_url"] = endpoint
+        if region and region.lower() != "auto":
+            client_kwargs["region_name"] = region
+        if access_key:
+            client_kwargs["aws_access_key_id"] = access_key
+        if secret_key:
+            client_kwargs["aws_secret_access_key"] = secret_key
+        if path_style and Config is not None:
+            client_kwargs["config"] = Config(s3={"addressing_style": "path"})
+        self.client = boto3.client("s3", **client_kwargs)
 
     def _key(self, name):
         return f"{self.prefix}/{name}" if self.prefix else name
@@ -83,16 +105,19 @@ class S3Storage:
 
 
 def get_storage(root):
-    import os
-
     settings = load_storage_settings(root)
     backend = os.getenv("STORAGE_BACKEND", settings.get("backend", "local")).lower()
     if backend == "s3":
+        endpoint = os.getenv("S3_ENDPOINT", settings.get("s3_endpoint", "")).strip()
         bucket = os.getenv("S3_BUCKET", settings.get("s3_bucket", "")).strip()
+        region = os.getenv("S3_REGION", settings.get("s3_region", "auto")).strip()
+        access_key = os.getenv("S3_ACCESS_KEY", settings.get("s3_access_key", "")).strip()
+        secret_key = os.getenv("S3_SECRET_KEY", settings.get("s3_secret_key", "")).strip()
         prefix = os.getenv("S3_PREFIX", settings.get("s3_prefix", ""))
+        path_style = os.getenv("S3_PATH_STYLE", str(settings.get("s3_path_style", False))).strip().lower() in {"1", "true", "yes", "on"}
         if not bucket:
             raise RuntimeError("S3_BUCKET is required when STORAGE_BACKEND=s3.")
-        return S3Storage(bucket, prefix)
+        return S3Storage(bucket, prefix, endpoint, region, access_key, secret_key, path_style)
     return LocalStorage(root)
 
 
@@ -134,9 +159,39 @@ def hashes_default():
 def storage_settings_default():
     return {
         "backend": "local",
+        "s3_endpoint": "",
         "s3_bucket": "",
+        "s3_region": "auto",
+        "s3_access_key_encrypted": "",
+        "s3_secret_key_encrypted": "",
         "s3_prefix": "",
+        "s3_path_style": False,
     }
+
+
+def get_settings_fernet():
+    secret = os.getenv("STORAGE_SETTINGS_KEY") or os.getenv("SECRET_KEY", "change-me-for-production")
+    if Fernet is None:
+        raise RuntimeError("cryptography is required for secure storage settings.")
+    key = urlsafe_b64encode(sha256(secret.encode("utf-8")).digest())
+    return Fernet(key)
+
+
+def encrypt_storage_value(value):
+    value = str(value or "").strip()
+    if not value:
+        return ""
+    return get_settings_fernet().encrypt(value.encode("utf-8")).decode("utf-8")
+
+
+def decrypt_storage_value(value):
+    value = str(value or "").strip()
+    if not value:
+        return ""
+    try:
+        return get_settings_fernet().decrypt(value.encode("utf-8")).decode("utf-8")
+    except InvalidToken as error:
+        raise RuntimeError("Stored S3 credentials could not be decrypted. Check SECRET_KEY or STORAGE_SETTINGS_KEY.") from error
 
 
 def load_storage_settings(root):
@@ -150,6 +205,9 @@ def load_storage_settings(root):
         return storage_settings_default()
     settings = storage_settings_default()
     settings.update({key: data.get(key, value) for key, value in settings.items()})
+    settings["s3_path_style"] = bool(settings.get("s3_path_style"))
+    settings["s3_access_key"] = decrypt_storage_value(settings.get("s3_access_key_encrypted", ""))
+    settings["s3_secret_key"] = decrypt_storage_value(settings.get("s3_secret_key_encrypted", ""))
     return settings
 
 
@@ -157,6 +215,11 @@ def save_storage_settings(root, settings):
     path = Path(root) / STORAGE_SETTINGS_FILE
     payload = storage_settings_default()
     payload.update({key: settings.get(key, value) for key, value in payload.items()})
+    payload["s3_path_style"] = bool(settings.get("s3_path_style", False))
+    payload["s3_access_key_encrypted"] = encrypt_storage_value(settings.get("s3_access_key", ""))
+    payload["s3_secret_key_encrypted"] = encrypt_storage_value(settings.get("s3_secret_key", ""))
+    payload.pop("s3_access_key", None)
+    payload.pop("s3_secret_key", None)
     with path.open("w", encoding="utf-8") as file:
         json.dump(payload, file, indent=2)
 
