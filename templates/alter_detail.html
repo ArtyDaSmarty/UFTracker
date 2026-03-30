@@ -27,6 +27,7 @@
       </label>
       <label>Birthday day<input name="birthday_day" value="{{ view.profile.birthday_day or '' }}"></label>
       <label>Gender<select name="gender"><option value=""></option>{% for item in gender_options %}<option value="{{ item }}" {% if view.profile.gender == item %}selected{% endif %}>{{ item }}</option>{% endfor %}</select></label>
+      <label>Pronouns<input name="pronouns" value="{{ '' if view.profile.pronouns == legacy_value else view.profile.pronouns }}"></label>
       <label>Reproductive Organ<select name="reproductive_organ"><option value=""></option>{% for item in organ_options %}<option value="{{ item }}" {% if view.profile.reproductive_organ == item %}selected{% endif %}>{{ item }}</option>{% endfor %}</select></label>
       <label>Sexual/Romantic Attraction<input name="attraction" value="{{ '' if view.profile.sexual_romantic_attraction == legacy_value else view.profile.sexual_romantic_attraction }}"></label>
       <label>Relationship Style<select name="relationship_style"><option value=""></option>{% for item in relationship_style_options %}<option value="{{ item }}" {% if view.profile.relationship_style == item %}selected{% endif %}>{{ item }}</option>{% endfor %}</select></label>
