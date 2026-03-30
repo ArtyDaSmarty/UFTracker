@@ -23,7 +23,7 @@
     <aside class="sidebar">
       <h1>{{ site_name }}</h1>
       {% if current_user %}
-      <p class="muted">{{ current_user.username }} | Level {{ current_level }} | {{ current_role|upper }}</p>
+      <p class="muted">{{ current_user.username }} | {{ current_role|upper }}</p>
       <nav>
         <a href="{{ url_for('dashboard') }}">Dashboard</a>
         {% if current_role == 'admin' %}
