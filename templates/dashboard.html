@@ -18,13 +18,13 @@
     {% if can_create_records %}
     <form method="post" action="{{ url_for('create_record', kind='alter') }}" class="stack compact">
       <label>Alter name<input name="name" required></label>
-      <label>Alter ID<input name="entry_id" placeholder="Leave blank to use generated or manual ID"></label>
+      <label>Alter ID<input id="alter-entry-id" name="entry_id" placeholder="Leave blank to use generated or manual ID"></label>
       <label>Access level
         <select name="level">{% for level in entry_level_options %}{% if current_level == 4 or level <= current_level %}<option value="{{ level }}" {% if level == current_level or (current_level == 4 and level == 3) %}selected{% endif %}>Level {{ level }}</option>{% endif %}{% endfor %}</select>
       </label>
       <button class="primary">Create Alter</button>
     </form>
-    <form method="post" action="{{ url_for('generate_id', kind='alter') }}" class="stack compact top-gap inline-form-card">
+    <form method="post" action="{{ url_for('generate_id', kind='alter') }}" class="stack compact top-gap inline-form-card" data-async="json" data-target="#alter-entry-id">
       <label>Generate Alter ID Prefix
         <select name="prefix">
           <option value="">No Prefix</option>
@@ -36,13 +36,13 @@
 
     <form method="post" action="{{ url_for('create_record', kind='location') }}" class="stack compact top-gap">
       <label>Location name<input name="name" required></label>
-      <label>Location ID<input name="entry_id" placeholder="Leave blank to use generated or manual ID"></label>
+      <label>Location ID<input id="location-entry-id" name="entry_id" placeholder="Leave blank to use generated or manual ID"></label>
       <label>Access level
         <select name="level">{% for level in entry_level_options %}{% if current_level == 4 or level <= current_level %}<option value="{{ level }}" {% if level == current_level or (current_level == 4 and level == 3) %}selected{% endif %}>Level {{ level }}</option>{% endif %}{% endfor %}</select>
       </label>
       <button class="primary">Create Location</button>
     </form>
-    <form method="post" action="{{ url_for('generate_id', kind='location') }}" class="stack compact top-gap inline-form-card">
+    <form method="post" action="{{ url_for('generate_id', kind='location') }}" class="stack compact top-gap inline-form-card" data-async="json" data-target="#location-entry-id">
       <label>Generate Location ID Prefix
         <select name="prefix">
           <option value="">No Prefix</option>
@@ -54,13 +54,13 @@
 
     <form method="post" action="{{ url_for('create_record', kind='affiliation') }}" class="stack compact top-gap">
       <label>Affiliation name<input name="name" required></label>
-      <label>Affiliation ID<input name="entry_id" placeholder="Leave blank to auto-generate"></label>
+      <label>Affiliation ID<input id="affiliation-entry-id" name="entry_id" placeholder="Leave blank to auto-generate"></label>
       <label>Access level
         <select name="level">{% for level in entry_level_options %}{% if current_level == 4 or level <= current_level %}<option value="{{ level }}" {% if level == current_level or (current_level == 4 and level == 3) %}selected{% endif %}>Level {{ level }}</option>{% endif %}{% endfor %}</select>
       </label>
       <button class="primary">Create Affiliation</button>
     </form>
-    <form method="post" action="{{ url_for('generate_id', kind='affiliation') }}" class="stack compact top-gap inline-form-card">
+    <form method="post" action="{{ url_for('generate_id', kind='affiliation') }}" class="stack compact top-gap inline-form-card" data-async="json" data-target="#affiliation-entry-id">
       <label>Generate Affiliation ID Prefix
         <select name="prefix">
           <option value="">No Prefix</option>
@@ -77,11 +77,11 @@
   <div class="card">
     <h3>Prefixes</h3>
     {% if can_create_records %}
-    <form method="post" action="{{ url_for('add_prefix', kind='alter') }}" class="stack compact">
+    <form method="post" action="{{ url_for('add_prefix', kind='alter') }}" class="stack compact" data-async="swap">
       <label>New alter prefix<input name="prefix"></label>
       <button>Add Alter Prefix</button>
     </form>
-    <form method="post" action="{{ url_for('add_prefix', kind='affiliation') }}" class="stack compact">
+    <form method="post" action="{{ url_for('add_prefix', kind='affiliation') }}" class="stack compact" data-async="swap">
       <label>New affiliation prefix<input name="prefix"></label>
       <button>Add Affiliation Prefix</button>
     </form>
@@ -95,7 +95,7 @@
         <div class="token-row">
           <span class="token">{{ prefix }}</span>
           {% if current_role == 'admin' %}
-          <form method="post" action="{{ url_for('remove_prefix', kind='alter') }}">
+          <form method="post" action="{{ url_for('remove_prefix', kind='alter') }}" data-async="swap">
             <input type="hidden" name="prefix" value="{{ prefix }}">
             <button type="submit">Remove</button>
           </form>
@@ -109,7 +109,7 @@
         <div class="token-row">
           <span class="token">{{ prefix }}</span>
           {% if current_role == 'admin' %}
-          <form method="post" action="{{ url_for('remove_prefix', kind='affiliation') }}">
+          <form method="post" action="{{ url_for('remove_prefix', kind='affiliation') }}" data-async="swap">
             <input type="hidden" name="prefix" value="{{ prefix }}">
             <button type="submit">Remove</button>
           </form>
@@ -124,11 +124,11 @@
   <div class="card">
     <h3>Relation Tags</h3>
     {% if can_create_records %}
-    <form method="post" action="{{ url_for('add_standard_tag') }}" class="stack compact">
+    <form method="post" action="{{ url_for('add_standard_tag') }}" class="stack compact" data-async="swap">
       <label>Standard tag<input name="tag_name"></label>
       <button>Add Tag</button>
     </form>
-    <form method="post" action="{{ url_for('add_special_tag') }}" class="stack compact">
+    <form method="post" action="{{ url_for('add_special_tag') }}" class="stack compact" data-async="swap">
       <label>Forward tag<input name="forward_tag"></label>
       <label>Reverse tag<input name="reverse_tag"></label>
       <button>Add Reciprocal Pair</button>
