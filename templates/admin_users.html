@@ -31,6 +31,9 @@
     <label class="check-row"><input type="checkbox" name="relation_permission" {% if user.relation_permission %}checked{% endif %}><span>Relation Lock permission</span></label>
     <button name="action" value="relations">Save Relation Lock Permission</button>
 
+    <label class="check-row"><input type="checkbox" name="document_permission" {% if user.document_permission %}checked{% endif %}><span>Document Lock permission</span></label>
+    <button name="action" value="document">Save Document Lock Permission</button>
+
     <label class="check-row"><input type="checkbox" name="locked_gallery_permission" {% if user.locked_gallery_permission %}checked{% endif %}><span>Locked Galleries permission</span></label>
     <button name="action" value="locked_gallery">Save Locked Galleries Permission</button>
     {% endif %}
