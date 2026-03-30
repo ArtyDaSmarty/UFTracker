@@ -40,11 +40,8 @@ DEFAULT_ALTER_PREFIXES = ["UFA-"]
 DEFAULT_AFFILIATION_PREFIXES = ["AFF-"]
 LOCATION_PREFIX = "LOC-"
 LEGACY_VALUE = "LEGACY"
-INDEPENDENT_AFFILIATION_ID = "__independent__"
 STATUS_OPTIONS = ["Current", "Formerly", "Independent"]
 ROLE_OPTIONS = ["user", "mod", "admin"]
-USER_LEVEL_OPTIONS = [1, 2, 3, 4]
-ENTRY_LEVEL_OPTIONS = [1, 2, 3]
 GENDER_OPTIONS = ["Cisgender", "Transgender", "Nonbinary"]
 ORGAN_OPTIONS = ["Penis", "Vagina", "Mixed", "Varies"]
 RELATIONSHIP_STYLE_OPTIONS = ["Polyamorous", "Monogamous", "Harem (Center)", "Harem (Member)"]
@@ -216,7 +213,6 @@ def tracker_default():
         "alters": {},
         "locations": {},
         "affiliations": {},
-        "entry_levels": {"alters": {}, "locations": {}, "affiliations": {}},
         "relations": [],
         "location_bindings": {},
         "last_modified": {"alters": {}, "locations": {}, "affiliations": {}},
@@ -390,6 +386,7 @@ def legacy_profile():
         "memory_tree": {"pre_systemhood": [], "current": []},
         "notes": [],
         "gallery": [],
+        "gallery_locked": False,
     }
 
 
@@ -399,50 +396,44 @@ def load_users(storage):
     changed = False
     admin_assigned = False
     for user in data["users"]:
-        role = user.get("role", "user")
-        if "level" not in user:
-            if role == "admin" and not admin_assigned:
-                user["level"] = 4
-            elif role in {"admin", "mod"}:
-                user["level"] = 3
-            else:
-                user["level"] = 1
-            changed = True
-        try:
-            user["level"] = int(user["level"])
-        except (TypeError, ValueError):
-            user["level"] = 1
-            changed = True
-        if user["level"] >= 4:
+        role = str(user.get("role", "user")).strip().lower() or "user"
+        if role == "admin":
             if admin_assigned:
-                user["level"] = 3
+                role = "mod"
                 changed = True
             else:
-                user["level"] = 4
                 admin_assigned = True
-        elif user["level"] < 1:
-            user["level"] = 1
+        elif role not in {"mod", "user"}:
+            role = "user"
             changed = True
-        elif user["level"] > 3:
-            user["level"] = 3
+        user["role"] = role
+        if "level" in user:
+            user.pop("level", None)
             changed = True
-        if user["level"] == 4:
-            user["role"] = "admin"
-        elif user["level"] >= 3:
-            user["role"] = "mod"
-        else:
-            user["role"] = "user"
         if "creation_permission" not in user:
-            user["creation_permission"] = user["level"] >= 3
+            user["creation_permission"] = role in {"admin", "mod"}
+            changed = True
+        if "memory_tree_permission" not in user:
+            user["memory_tree_permission"] = role == "admin"
+            changed = True
+        if "locked_gallery_permission" not in user:
+            user["locked_gallery_permission"] = user.get("gallery_permission", role == "admin")
+            changed = True
+        if "gallery_permission" in user:
+            user.pop("gallery_permission", None)
             changed = True
         user.setdefault("active", True)
-        if user["level"] == 4 and not user["creation_permission"]:
+        if user["role"] == "admin":
+            user["memory_tree_permission"] = True
+            user["locked_gallery_permission"] = True
+        if user["role"] == "admin" and not user["creation_permission"]:
             user["creation_permission"] = True
             changed = True
     if data["users"] and not admin_assigned:
-        data["users"][0]["level"] = 4
         data["users"][0]["role"] = "admin"
         data["users"][0]["creation_permission"] = True
+        data["users"][0]["memory_tree_permission"] = True
+        data["users"][0]["locked_gallery_permission"] = True
         changed = True
     if changed:
         save_users(storage, data)
@@ -521,7 +512,6 @@ def load_data(storage):
     data.setdefault("alters", {})
     data.setdefault("locations", {})
     data.setdefault("affiliations", {})
-    data.setdefault("entry_levels", {"alters": {}, "locations": {}, "affiliations": {}})
     data.setdefault("relations", [])
     data.setdefault("location_bindings", {})
     data.setdefault("last_modified", {"alters": {}, "locations": {}, "affiliations": {}})
@@ -531,9 +521,7 @@ def load_data(storage):
     data.setdefault("affiliation_prefixes", list(DEFAULT_AFFILIATION_PREFIXES))
     data.setdefault("alter_profiles", {})
     data.setdefault("location_galleries", {})
-    data["entry_levels"].setdefault("alters", {})
-    data["entry_levels"].setdefault("locations", {})
-    data["entry_levels"].setdefault("affiliations", {})
+    data.setdefault("location_gallery_locks", {})
     data["last_modified"].setdefault("alters", {})
     data["last_modified"].setdefault("locations", {})
     data["last_modified"].setdefault("affiliations", {})
@@ -573,10 +561,8 @@ def load_data(storage):
             )
     data["relations"] = migrated_relations
 
+    data.pop("entry_levels", None)
     for alter_id in data["alters"]:
-        if alter_id not in data["entry_levels"]["alters"]:
-            data["entry_levels"]["alters"][alter_id] = 3
-            changed = True
         if alter_id not in data["last_modified"]["alters"]:
             data["last_modified"]["alters"][alter_id] = ""
             changed = True
@@ -604,13 +590,11 @@ def load_data(storage):
         }
         profile["notes"] = normalize_notes(profile.get("notes", []))
         profile["gallery"] = [item for item in profile.get("gallery", []) if str(item).strip()]
+        profile["gallery_locked"] = bool(profile.get("gallery_locked", False))
         if update_profile_birthday_age(profile):
             changed = True
 
     for location_id in data["locations"]:
-        if location_id not in data["entry_levels"]["locations"]:
-            data["entry_levels"]["locations"][location_id] = 3
-            changed = True
         if location_id not in data["last_modified"]["locations"]:
             data["last_modified"]["locations"][location_id] = ""
             changed = True
@@ -619,11 +603,13 @@ def load_data(storage):
             changed = True
         else:
             data["location_galleries"][location_id] = [item for item in data["location_galleries"].get(location_id, []) if str(item).strip()]
+        if location_id not in data["location_gallery_locks"]:
+            data["location_gallery_locks"][location_id] = False
+            changed = True
+        else:
+            data["location_gallery_locks"][location_id] = bool(data["location_gallery_locks"].get(location_id, False))
 
     for affiliation_id in data["affiliations"]:
-        if affiliation_id not in data["entry_levels"]["affiliations"]:
-            data["entry_levels"]["affiliations"][affiliation_id] = 3
-            changed = True
         if affiliation_id not in data["last_modified"]["affiliations"]:
             data["last_modified"]["affiliations"][affiliation_id] = ""
             changed = True
@@ -710,7 +696,7 @@ def parse_timestamp(value):
 
 
 def create_entry(storage, bucket_name, entity_label, name, entry_id):
-    return create_entry_with_level(storage, bucket_name, entity_label, name, entry_id, 3)
+    return create_entry_with_level(storage, bucket_name, entity_label, name, entry_id, None)
 
 
 def create_entry_with_level(storage, bucket_name, entity_label, name, entry_id, level):
@@ -721,59 +707,57 @@ def create_entry_with_level(storage, bucket_name, entity_label, name, entry_id, 
         return False, f"{entity_label.title()} name is required."
     if entry_id in data[bucket_name]:
         return False, f'ID "{entry_id}" already exists.'
-    try:
-        numeric_level = int(level)
-    except (TypeError, ValueError):
-        return False, "Entry level must be numeric."
-    if numeric_level < 1 or numeric_level > 3:
-        return False, "Entry level must be between 1 and 3."
     data[bucket_name][entry_id] = name
-    data["entry_levels"][bucket_name][entry_id] = numeric_level
     touch_entry(data, bucket_name, entry_id)
     if bucket_name == "alters":
         data["alter_profiles"].setdefault(entry_id, legacy_profile())
+    elif bucket_name == "locations":
+        data["location_galleries"].setdefault(entry_id, [])
+        data.setdefault("location_gallery_locks", {})[entry_id] = False
     save_data(storage, data)
     sync_saved_hashes_with_tracker(storage, data)
     return True, f"Created {entity_label}: {name} ({entry_id})"
 
 
-def get_entry_level(data, bucket_name, entry_id):
-    return int(data.get("entry_levels", {}).get(bucket_name, {}).get(entry_id, 3))
-
-
-def set_entry_level(storage, bucket_name, entry_id, level):
-    data = load_data(storage)
-    if entry_id not in data[bucket_name]:
-        return False, "That entry does not exist."
-    try:
-        numeric_level = int(level)
-    except ValueError:
-        return False, "Level must be numeric."
-    if numeric_level < 1 or numeric_level > 3:
-        return False, "Entry level must be between 1 and 3."
-    data["entry_levels"][bucket_name][entry_id] = numeric_level
-    touch_entry(data, bucket_name, entry_id)
-    save_data(storage, data)
-    return True, f"Updated entry level to {numeric_level}."
-
-
-def can_access_level(user_level, entry_level):
-    return user_level >= entry_level
-
-
 def user_can_create(user):
-    return bool(user and (int(user.get("level", 1)) >= 4 or user.get("creation_permission")))
+    return bool(user and (user.get("role") == "admin" or user.get("creation_permission")))
 
 
-def entry_is_accessible(data, kind, entry_id, user_level):
+def user_can_view_memory(user):
+    return bool(user and (user.get("role") == "admin" or user.get("memory_tree_permission")))
+
+
+def user_can_view_gallery(user):
+    return bool(user)
+
+
+def user_can_view_locked_gallery(user):
+    return bool(user and (user.get("role") == "admin" or user.get("locked_gallery_permission")))
+
+
+def is_gallery_locked(data, kind, entry_id):
+    if kind == "alter":
+        return bool(data["alter_profiles"].get(entry_id, {}).get("gallery_locked", False))
+    if kind == "location":
+        return bool(data.get("location_gallery_locks", {}).get(entry_id, False))
+    return False
+
+
+def can_view_gallery_for_entry(data, user, kind, entry_id):
+    if not user:
+        return False
+    if not is_gallery_locked(data, kind, entry_id):
+        return True
+    return user_can_view_locked_gallery(user)
+
+
+def entry_is_accessible(data, kind, entry_id, user_level=None):
     bucket_map = {"alter": "alters", "location": "locations", "affiliation": "affiliations"}
     bucket_name = bucket_map[kind]
-    if entry_id not in data[bucket_name]:
-        return False
-    return can_access_level(user_level, get_entry_level(data, bucket_name, entry_id))
+    return entry_id in data[bucket_name]
 
 
-def visible_entries(data, kind, user_level):
+def visible_entries(data, kind, user_level=None):
     bucket_map = {"alter": "alters", "location": "locations", "affiliation": "affiliations"}
     bucket_name = bucket_map[kind]
     return [
@@ -947,22 +931,14 @@ def save_alter_profile(storage, alter_id, form):
 
 def update_affiliation_membership(storage, alter_id, affiliation_id, status):
     data = load_data(storage)
-    if alter_id not in data["alters"]:
-        return False, "Alter must exist."
-    status = status if status in STATUS_OPTIONS else STATUS_OPTIONS[0]
-    if status == "Independent":
-        affiliation_id = INDEPENDENT_AFFILIATION_ID
-    elif affiliation_id not in data["affiliations"]:
+    if alter_id not in data["alters"] or affiliation_id not in data["affiliations"]:
         return False, "Alter and affiliation must exist."
     status = status if status in STATUS_OPTIONS else STATUS_OPTIONS[0]
     profile = data["alter_profiles"].setdefault(alter_id, legacy_profile())
     profile["affiliations"] = [item for item in profile["affiliations"] if item["value"] != affiliation_id]
-    if affiliation_id == INDEPENDENT_AFFILIATION_ID:
-        profile["affiliations"] = [item for item in profile["affiliations"] if item["value"] != INDEPENDENT_AFFILIATION_ID]
     profile["affiliations"].append({"value": affiliation_id, "status": status})
     touch_entry(data, "alters", alter_id)
-    if affiliation_id in data["affiliations"]:
-        touch_entry(data, "affiliations", affiliation_id)
+    touch_entry(data, "affiliations", affiliation_id)
     save_data(storage, data)
     return True, "Updated affiliation membership."
 
@@ -970,15 +946,12 @@ def update_affiliation_membership(storage, alter_id, affiliation_id, status):
 def remove_affiliation_membership(storage, alter_id, affiliation_id):
     data = load_data(storage)
     profile = data["alter_profiles"].setdefault(alter_id, legacy_profile())
-    if not affiliation_id:
-        affiliation_id = INDEPENDENT_AFFILIATION_ID
     before = len(profile["affiliations"])
     profile["affiliations"] = [item for item in profile["affiliations"] if item["value"] != affiliation_id]
     if len(profile["affiliations"]) == before:
         return False, "That affiliation is not assigned."
     touch_entry(data, "alters", alter_id)
-    if affiliation_id in data["affiliations"]:
-        touch_entry(data, "affiliations", affiliation_id)
+    touch_entry(data, "affiliations", affiliation_id)
     save_data(storage, data)
     return True, "Removed affiliation membership."
 
@@ -1157,6 +1130,23 @@ def add_gallery_item(storage, kind, entry_id, image_url):
     return True, "Added gallery image."
 
 
+def set_gallery_locked(storage, kind, entry_id, locked):
+    data = load_data(storage)
+    locked = bool(locked)
+    if kind == "alter":
+        if entry_id not in data["alters"]:
+            return False, "Unknown alter."
+        data["alter_profiles"].setdefault(entry_id, legacy_profile())["gallery_locked"] = locked
+        touch_entry(data, "alters", entry_id)
+    else:
+        if entry_id not in data["locations"]:
+            return False, "Unknown location."
+        data.setdefault("location_gallery_locks", {})[entry_id] = locked
+        touch_entry(data, "locations", entry_id)
+    save_data(storage, data)
+    return True, "Gallery lock updated."
+
+
 def remove_gallery_item(storage, kind, entry_id, image_url):
     data = load_data(storage)
     if kind == "alter":
@@ -1192,23 +1182,21 @@ def delete_entry(storage, kind, entry_id):
             relation for relation in data["relations"]
             if relation["source_id"] != entry_id and relation["target_id"] != entry_id
         ]
-        data["entry_levels"]["alters"].pop(entry_id, None)
         data["last_modified"]["alters"].pop(entry_id, None)
     elif kind == "location":
         data["locations"].pop(entry_id, None)
         data["location_galleries"].pop(entry_id, None)
+        data.get("location_gallery_locks", {}).pop(entry_id, None)
         data["location_bindings"] = {
             alter_id: location_id
             for alter_id, location_id in data["location_bindings"].items()
             if location_id != entry_id
         }
-        data["entry_levels"]["locations"].pop(entry_id, None)
         data["last_modified"]["locations"].pop(entry_id, None)
     else:
         data["affiliations"].pop(entry_id, None)
         for profile in data["alter_profiles"].values():
             profile["affiliations"] = [item for item in profile.get("affiliations", []) if item["value"] != entry_id]
-        data["entry_levels"]["affiliations"].pop(entry_id, None)
         data["last_modified"]["affiliations"].pop(entry_id, None)
 
     save_data(storage, data)
@@ -1327,7 +1315,7 @@ def format_affiliation_entries(data, entries):
     if not entries:
         return LEGACY_VALUE
     return "; ".join(
-        f'{("Independent" if item["value"] == INDEPENDENT_AFFILIATION_ID else data["affiliations"].get(item["value"], item["value"]))} [{item["status"]}]'
+        f'{data["affiliations"].get(item["value"], item["value"])} [{item["status"]}]'
         for item in entries
     )
 
@@ -1339,9 +1327,9 @@ def build_affiliation_links(data, entries):
         linked.append(
             {
                 "id": affiliation_id,
-                "name": "Independent" if affiliation_id == INDEPENDENT_AFFILIATION_ID else data["affiliations"].get(affiliation_id, affiliation_id),
+                "name": data["affiliations"].get(affiliation_id, affiliation_id),
                 "status": item["status"],
-                "is_linkable": affiliation_id != INDEPENDENT_AFFILIATION_ID,
+                "is_linkable": True,
             }
         )
     return linked
@@ -1422,14 +1410,10 @@ def build_alter_view(data, alter_id, user_level=4):
     visible_location_id = data["location_bindings"].get(alter_id, "")
     if visible_location_id and not entry_is_accessible(data, "location", visible_location_id, user_level):
         visible_location_id = ""
-    visible_profile_affiliations = [
-        item for item in profile.get("affiliations", [])
-        if item["value"] in visible_affiliation_ids or item["value"] == INDEPENDENT_AFFILIATION_ID
-    ]
+    visible_profile_affiliations = [item for item in profile.get("affiliations", []) if item["value"] in visible_affiliation_ids]
     return {
         "id": alter_id,
         "name": data["alters"][alter_id],
-        "level": get_entry_level(data, "alters", alter_id),
         "profile": profile,
         "profile_summary": [
             ("Aliases", format_aliases(profile)),
@@ -1455,6 +1439,7 @@ def build_alter_view(data, alter_id, user_level=4):
         "memory_tree": profile.get("memory_tree", {"pre_systemhood": [], "current": []}),
         "notes": profile.get("notes", []),
         "gallery": list(profile.get("gallery", [])),
+        "gallery_locked": bool(profile.get("gallery_locked", False)),
     }
 
 
@@ -1469,9 +1454,9 @@ def build_location_view(data, location_id, user_level=4):
     return {
         "id": location_id,
         "name": data["locations"][location_id],
-        "level": get_entry_level(data, "locations", location_id),
         "bound_alters": sorted(bound, key=lambda item: item["name"].casefold()),
         "gallery": list(data["location_galleries"].get(location_id, [])),
+        "gallery_locked": bool(data.get("location_gallery_locks", {}).get(location_id, False)),
     }
 
 
@@ -1491,7 +1476,6 @@ def build_affiliation_view(data, affiliation_id, user_level=4):
     return {
         "id": affiliation_id,
         "name": data["affiliations"][affiliation_id],
-        "level": get_entry_level(data, "affiliations", affiliation_id),
         "current_members": sorted(current_members, key=lambda item: item["name"].casefold()),
         "former_members": sorted(former_members, key=lambda item: item["name"].casefold()),
     }
