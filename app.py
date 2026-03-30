@@ -503,7 +503,7 @@ def create_record(kind):
     elif kind == "location" and not entry_id:
         entry_id = generate_unique_hash(storage, LOCATION_PREFIX)
     elif kind == "affiliation" and not entry_id:
-        entry_id = generate_unique_hash(storage, data["affiliation_prefixes"][0])
+        entry_id = generate_unique_hash(storage, data["affiliation_prefixes"][0] if data["affiliation_prefixes"] else "")
     bucket_map = {"alter": ("alters", "alter"), "location": ("locations", "location"), "affiliation": ("affiliations", "affiliation")}
     success, message = create_entry_with_level(storage, bucket_map[kind][0], bucket_map[kind][1], name, entry_id, level)
     flash(message, "success" if success else "error")

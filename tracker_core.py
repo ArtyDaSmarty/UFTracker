@@ -545,7 +545,7 @@ def load_data(storage):
         + list(data["special_relation_tags"].values())
     )
     data["alter_prefixes"] = unique_items(list(DEFAULT_ALTER_PREFIXES) + data["alter_prefixes"])
-    data["affiliation_prefixes"] = unique_items(list(DEFAULT_AFFILIATION_PREFIXES) + data["affiliation_prefixes"])
+    data["affiliation_prefixes"] = unique_items(data["affiliation_prefixes"])
 
     changed = False
     migrated_relations = []
@@ -858,8 +858,6 @@ def delete_affiliation_prefix(storage, prefix):
     prefix = prefix.strip()
     if prefix not in data["affiliation_prefixes"]:
         return False, "That affiliation prefix does not exist."
-    if len(data["affiliation_prefixes"]) == 1:
-        return False, "At least one affiliation prefix must remain."
     data["affiliation_prefixes"] = [item for item in data["affiliation_prefixes"] if item != prefix]
     save_data(storage, data)
     return True, f'Removed affiliation prefix "{prefix}".'
@@ -956,6 +954,7 @@ def update_affiliation_membership(storage, alter_id, affiliation_id, status):
         affiliation_id = INDEPENDENT_AFFILIATION_ID
     elif affiliation_id not in data["affiliations"]:
         return False, "Alter and affiliation must exist."
+    status = status if status in STATUS_OPTIONS else STATUS_OPTIONS[0]
     profile = data["alter_profiles"].setdefault(alter_id, legacy_profile())
     profile["affiliations"] = [item for item in profile["affiliations"] if item["value"] != affiliation_id]
     if affiliation_id == INDEPENDENT_AFFILIATION_ID:
