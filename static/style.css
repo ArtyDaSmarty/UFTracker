@@ -77,6 +77,19 @@ a { color: inherit; text-decoration: none; }
   font-size: 0.9rem;
 }
 .main { padding: 24px; }
+.search-shell { margin-bottom: 16px; }
+.global-search {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 140px;
+  gap: 10px;
+  padding: 12px;
+  border: 2px solid var(--line);
+  border-radius: 3px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--card) 94%, var(--sidebar)), var(--card));
+  box-shadow: var(--shadow);
+}
+.global-search input { text-transform: none; }
+.search-section { padding-top: 4px; }
 .hero, .card {
   position: relative;
   background: linear-gradient(180deg, color-mix(in srgb, var(--card) 98%, white 2%), var(--card));
@@ -266,6 +279,7 @@ button.primary:hover, .button-link:hover { filter: brightness(1.08); }
   .cols-5, .cols-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .cols-4, .cols-2, .admin-search { grid-template-columns: 1fr; }
   .bulk-row { grid-template-columns: 1fr; }
+  .global-search { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 900px) {
