@@ -15,9 +15,12 @@
       <nav>
         <a href="{{ url_for('dashboard') }}">Dashboard</a>
         {% if current_role == 'admin' %}
-        <a href="{{ url_for('admin_users') }}">User Management</a>
-        <a href="{{ url_for('admin_import') }}">Import JSON</a>
-        <a href="{{ url_for('admin_storage') }}">Storage</a>
+        <div class="nav-group">
+          <span class="nav-group-title">Admin Options</span>
+          <a href="{{ url_for('admin_users') }}">User Management</a>
+          <a href="{{ url_for('admin_import') }}">Import JSON</a>
+          <a href="{{ url_for('admin_storage') }}">Storage</a>
+        </div>
         {% endif %}
         <a href="{{ url_for('logout') }}">Logout</a>
       </nav>

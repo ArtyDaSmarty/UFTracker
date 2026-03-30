@@ -42,6 +42,7 @@ from tracker_core import (
     load_users,
     LocalStorage,
     migrate_storage_data,
+    migrate_legacy_local_files,
     remove_affiliation_membership,
     remove_gallery_item,
     remove_occupation_entry,
@@ -61,15 +62,18 @@ from tracker_core import (
 
 
 APP_DIR = Path(__file__).resolve().parent
+DATA_DIR = Path(os.getenv("DATA_DIR", str(APP_DIR / "data"))).resolve()
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+migrate_legacy_local_files(APP_DIR, DATA_DIR)
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "change-me-for-production")
-storage = get_storage(APP_DIR)
+storage = get_storage(DATA_DIR)
 ensure_storage_files(storage)
 
 
 def refresh_storage():
     global storage
-    storage = get_storage(APP_DIR)
+    storage = get_storage(DATA_DIR)
     ensure_storage_files(storage)
     return storage
 
@@ -133,7 +137,7 @@ def tracker_write_required(view):
 @app.context_processor
 def inject_globals():
     user = current_user()
-    storage_settings = load_storage_settings(APP_DIR)
+    storage_settings = load_storage_settings(DATA_DIR)
     return {
         "current_user": user,
         "current_role": user["role"] if user else None,
@@ -149,6 +153,7 @@ def inject_globals():
         "relationship_style_options": RELATIONSHIP_STYLE_OPTIONS,
         "legacy_value": LEGACY_VALUE,
         "storage_settings": storage_settings,
+        "data_dir": str(DATA_DIR),
     }
 
 
@@ -564,7 +569,7 @@ def admin_storage():
             flash("S3 bucket is required when using S3 storage.", "error")
             return redirect(url_for("admin_storage"))
         if action == "save":
-            save_storage_settings(APP_DIR, settings)
+            save_storage_settings(DATA_DIR, settings)
             try:
                 refresh_storage()
             except RuntimeError as error:
@@ -573,10 +578,10 @@ def admin_storage():
             flash("Storage settings saved.", "success")
             return redirect(url_for("admin_storage"))
         if action == "migrate":
-            save_storage_settings(APP_DIR, settings)
-            source_storage = LocalStorage(APP_DIR)
+            save_storage_settings(DATA_DIR, settings)
+            source_storage = LocalStorage(DATA_DIR)
             try:
-                destination_storage = get_storage(APP_DIR)
+                destination_storage = get_storage(DATA_DIR)
                 migrate_storage_data(source_storage, destination_storage)
                 refresh_storage()
             except RuntimeError as error:
@@ -584,7 +589,7 @@ def admin_storage():
                 return redirect(url_for("admin_storage"))
             flash("Data migrated to the configured storage backend.", "success")
             return redirect(url_for("admin_storage"))
-    settings = load_storage_settings(APP_DIR)
+    settings = load_storage_settings(DATA_DIR)
     return render_template(
         "admin_storage.html",
         backend=settings.get("backend", "local"),

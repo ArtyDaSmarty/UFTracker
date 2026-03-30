@@ -6,7 +6,8 @@
     <p><strong>Backend:</strong> {{ backend }}</p>
     <p><strong>S3 Bucket:</strong> {{ bucket or 'Not configured' }}</p>
     <p><strong>S3 Prefix:</strong> {{ prefix or 'Not configured' }}</p>
-    <p class="muted">Settings are saved in <code>{{ config_file }}</code>. Environment variables still override them if present.</p>
+    <p><strong>Data Directory:</strong> <code>{{ data_dir }}</code></p>
+    <p class="muted">Settings are saved in <code>{{ config_file }}</code> inside the data directory. Environment variables still override them if present.</p>
   </div>
 
   <div class="card">
@@ -23,7 +24,7 @@
       <button class="primary" name="action" value="save">Save Storage Settings</button>
       <button name="action" value="migrate">Save And Migrate Data</button>
     </form>
-    <p class="muted">Use migrate after switching to S3 so your tracker, hashes, and users are copied into the configured backend.</p>
+    <p class="muted">Use migrate after switching to S3 so your tracker, hashes, and users move from the persistent volume into the configured backend.</p>
   </div>
 </section>
 {% endblock %}
