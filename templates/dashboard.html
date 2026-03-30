@@ -60,6 +60,33 @@
       </label>
       <button type="submit">Generate Affiliation ID</button>
     </form>
+
+    <form method="post" action="{{ url_for('create_record', kind='document') }}" class="stack compact top-gap">
+      <label>Document name<input name="name" required></label>
+      <label>Document ID<input id="document-entry-id" name="entry_id" placeholder="Leave blank to auto-generate"></label>
+      <label>Format
+        <select name="document_format">
+          <option value="markdown">Markdown</option>
+          <option value="html">HTML</option>
+        </select>
+      </label>
+      <label>Tags<input name="tags" placeholder="Comma-separated tags"></label>
+      <label>Tied Alters<input name="tie_alters" placeholder="Comma-separated alter IDs or names"></label>
+      <label>Tied Locations<input name="tie_locations" placeholder="Comma-separated location IDs or names"></label>
+      <label>Tied Affiliations<input name="tie_affiliations" placeholder="Comma-separated affiliation IDs or names"></label>
+      <label>Tied Documents<input name="tie_documents" placeholder="Comma-separated document IDs or names"></label>
+      <label>Document Content<textarea name="content" rows="5" placeholder="Optional starting content"></textarea></label>
+      <button class="primary">Create Document</button>
+    </form>
+    <form method="post" action="{{ url_for('generate_id', kind='document') }}" class="stack compact top-gap inline-form-card" data-async="json" data-target="#document-entry-id">
+      <label>Generate Document ID Prefix
+        <select name="prefix">
+          <option value="">No Prefix</option>
+          <option value="DOC-">DOC-</option>
+        </select>
+      </label>
+      <button type="submit">Generate Document ID</button>
+    </form>
     {% else %}
     <p class="muted">This account is search and inquiry only.</p>
     {% endif %}
@@ -138,6 +165,8 @@
       <a class="list-item" href="{{ url_for('alter_detail', alter_id=item.id) }}">{{ item.name }} <span>{{ item.label }} | {{ item.id }}</span></a>
       {% elif item.kind == 'location' %}
       <a class="list-item" href="{{ url_for('location_detail', location_id=item.id) }}">{{ item.name }} <span>{{ item.label }} | {{ item.id }}</span></a>
+      {% elif item.kind == 'document' %}
+      <a class="list-item" href="{{ url_for('document_detail', document_id=item.id) }}">{{ item.name }} <span>{{ item.label }} | {{ item.id }}</span></a>
       {% else %}
       <a class="list-item" href="{{ url_for('affiliation_detail', affiliation_id=item.id) }}">{{ item.name }} <span>{{ item.label }} | {{ item.id }}</span></a>
       {% endif %}
