@@ -4,7 +4,7 @@
   <h2>User Management</h2>
   <p class="muted">Admins always keep full access. For everyone else, you can control creation access, Memory Tree access, and Locked Galleries access directly.</p>
   {% for user in users %}
-  <form method="post" class="stack compact bordered" data-async="swap">
+  <form method="post" class="stack compact bordered">
     <input type="hidden" name="user_id" value="{{ user.id }}">
     <div class="kv"><strong>{{ user.username }}</strong><span>{{ user.role|upper }}</span></div>
 
@@ -19,20 +19,20 @@
     </label>
     <button name="action" value="role">Save Role</button>
 
-    <label><input type="checkbox" name="creation_permission" {% if user.creation_permission %}checked{% endif %}> Creation permission</label>
+    <label class="check-row"><input type="checkbox" name="creation_permission" {% if user.creation_permission %}checked{% endif %}><span>Creation permission</span></label>
     <button name="action" value="creation">Save Creation Permission</button>
 
-    <label><input type="checkbox" name="memory_tree_permission" {% if user.memory_tree_permission %}checked{% endif %}> Memory Tree permission</label>
+    <label class="check-row"><input type="checkbox" name="memory_tree_permission" {% if user.memory_tree_permission %}checked{% endif %}><span>Memory Tree permission</span></label>
     <button name="action" value="memory">Save Memory Tree Permission</button>
 
-    <label><input type="checkbox" name="locked_gallery_permission" {% if user.locked_gallery_permission %}checked{% endif %}> Locked Galleries permission</label>
+    <label class="check-row"><input type="checkbox" name="locked_gallery_permission" {% if user.locked_gallery_permission %}checked{% endif %}><span>Locked Galleries permission</span></label>
     <button name="action" value="locked_gallery">Save Locked Galleries Permission</button>
     {% endif %}
 
     <label>Reset password<input type="password" name="new_password"></label>
     <button name="action" value="password">Set Password</button>
 
-    <label><input type="checkbox" name="active" {% if user.active %}checked{% endif %}> Active</label>
+    <label class="check-row"><input type="checkbox" name="active" {% if user.active %}checked{% endif %}><span>Active</span></label>
     <button name="action" value="active">Save Active State</button>
   </form>
   {% endfor %}
