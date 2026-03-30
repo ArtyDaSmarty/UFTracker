@@ -14,10 +14,11 @@ from pathlib import Path
 try:
     import boto3
     from botocore.config import Config
-    from botocore.exceptions import ClientError
+    from botocore.exceptions import BotoCoreError, ClientError
 except ImportError:  # pragma: no cover
     boto3 = None
     Config = None
+    BotoCoreError = Exception
     ClientError = Exception
 
 try:
@@ -53,6 +54,10 @@ HASH_LENGTH = 24
 ALPHABET = string.ascii_letters + string.digits
 
 
+class StorageError(RuntimeError):
+    pass
+
+
 class LocalStorage:
     def __init__(self, root):
         self.root = Path(root)
@@ -69,8 +74,11 @@ class LocalStorage:
 
     def write_json(self, name, data):
         path = self.root / name
-        with path.open("w", encoding="utf-8") as file:
-            json.dump(data, file, indent=2)
+        try:
+            with path.open("w", encoding="utf-8") as file:
+                json.dump(data, file, indent=2)
+        except OSError as exc:
+            raise StorageError(f"Unable to save {name}.") from exc
 
     def read_bytes(self, name):
         path = self.root / name
@@ -83,8 +91,11 @@ class LocalStorage:
 
     def write_bytes(self, name, payload):
         path = self.root / name
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(payload)
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(payload)
+        except OSError as exc:
+            raise StorageError(f"Unable to save {name}.") from exc
 
     def delete_bytes(self, name):
         path = self.root / name
@@ -133,7 +144,10 @@ class S3Storage:
 
     def write_json(self, name, data):
         body = json.dumps(data, indent=2).encode("utf-8")
-        self.client.put_object(Bucket=self.bucket, Key=self._key(name), Body=body, ContentType="application/json")
+        try:
+            self.client.put_object(Bucket=self.bucket, Key=self._key(name), Body=body, ContentType="application/json")
+        except (ClientError, BotoCoreError) as exc:
+            raise StorageError(f"Unable to save {name} to S3.") from exc
 
     def read_bytes(self, name):
         try:
@@ -144,7 +158,10 @@ class S3Storage:
 
     def write_bytes(self, name, payload):
         content_type = mimetypes.guess_type(name)[0] or "application/octet-stream"
-        self.client.put_object(Bucket=self.bucket, Key=self._key(name), Body=payload, ContentType=content_type)
+        try:
+            self.client.put_object(Bucket=self.bucket, Key=self._key(name), Body=payload, ContentType=content_type)
+        except (ClientError, BotoCoreError) as exc:
+            raise StorageError(f"Unable to save {name} to S3.") from exc
 
     def delete_bytes(self, name):
         try:
@@ -332,6 +349,7 @@ def legacy_profile():
         "birthday_day": None,
         "birthday_last_processed_year": None,
         "gender": LEGACY_VALUE,
+        "pronouns": LEGACY_VALUE,
         "reproductive_organ": LEGACY_VALUE,
         "sexual_romantic_attraction": LEGACY_VALUE,
         "relationship_style": LEGACY_VALUE,
@@ -838,6 +856,7 @@ def save_alter_profile(storage, alter_id, form):
         profile["birthday_day"] = None
         profile["birthday_last_processed_year"] = None
     profile["gender"] = form.get("gender", "") or LEGACY_VALUE
+    profile["pronouns"] = form.get("pronouns", "").strip() or LEGACY_VALUE
     profile["reproductive_organ"] = form.get("reproductive_organ", "") or LEGACY_VALUE
     profile["sexual_romantic_attraction"] = form.get("attraction", "").strip() or LEGACY_VALUE
     profile["relationship_style"] = form.get("relationship_style", "") or LEGACY_VALUE
@@ -1194,6 +1213,7 @@ def build_alter_view(data, alter_id, user_level=4):
             ("Age", format_age(profile)),
             ("Birthday", birthday_summary(profile)),
             ("Gender", profile.get("gender", LEGACY_VALUE)),
+            ("Pronouns", profile.get("pronouns", LEGACY_VALUE)),
             ("Reproductive Organ", profile.get("reproductive_organ", LEGACY_VALUE)),
             ("Sexual/Romantic Attraction", profile.get("sexual_romantic_attraction", LEGACY_VALUE)),
             ("Relationship Style", profile.get("relationship_style", LEGACY_VALUE)),
