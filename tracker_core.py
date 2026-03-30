@@ -4,20 +4,24 @@ import os
 import secrets
 import shutil
 import string
+import threading
 import urllib.parse
 import urllib.request
 from base64 import urlsafe_b64encode
+from copy import deepcopy
 from datetime import date, datetime, timezone
 from hashlib import sha256
 from pathlib import Path
+from time import monotonic
 
 try:
     import boto3
     from botocore.config import Config
-    from botocore.exceptions import ClientError
+    from botocore.exceptions import BotoCoreError, ClientError
 except ImportError:  # pragma: no cover
     boto3 = None
     Config = None
+    BotoCoreError = Exception
     ClientError = Exception
 
 try:
@@ -51,6 +55,48 @@ MONTH_OPTIONS = [
 ]
 HASH_LENGTH = 24
 ALPHABET = string.ascii_letters + string.digits
+CACHE_TTL_SECONDS = max(0.0, float(os.getenv("UFTD_CACHE_TTL", "5")))
+_MEMORY_CACHE = {}
+_CACHE_LOCK = threading.Lock()
+
+
+class StorageError(RuntimeError):
+    pass
+
+
+def _storage_identity(storage):
+    if isinstance(storage, LocalStorage):
+        return ("local", str(storage.root.resolve()))
+    meta = getattr(getattr(storage, "client", None), "meta", None)
+    endpoint_url = getattr(meta, "endpoint_url", "")
+    return ("s3", getattr(storage, "bucket", ""), getattr(storage, "prefix", ""), endpoint_url)
+
+
+def _cache_key(namespace, target):
+    return (namespace, target)
+
+
+def _read_cached(namespace, target):
+    if CACHE_TTL_SECONDS <= 0:
+        return None
+    with _CACHE_LOCK:
+        entry = _MEMORY_CACHE.get(_cache_key(namespace, target))
+        if not entry:
+            return None
+        if monotonic() - entry["saved_at"] > CACHE_TTL_SECONDS:
+            _MEMORY_CACHE.pop(_cache_key(namespace, target), None)
+            return None
+        return deepcopy(entry["value"])
+
+
+def _write_cached(namespace, target, value):
+    with _CACHE_LOCK:
+        _MEMORY_CACHE[_cache_key(namespace, target)] = {"saved_at": monotonic(), "value": deepcopy(value)}
+
+
+def _drop_cached(namespace, target):
+    with _CACHE_LOCK:
+        _MEMORY_CACHE.pop(_cache_key(namespace, target), None)
 
 
 class LocalStorage:
@@ -69,8 +115,11 @@ class LocalStorage:
 
     def write_json(self, name, data):
         path = self.root / name
-        with path.open("w", encoding="utf-8") as file:
-            json.dump(data, file, indent=2)
+        try:
+            with path.open("w", encoding="utf-8") as file:
+                json.dump(data, file, indent=2)
+        except OSError as exc:
+            raise StorageError(f"Unable to save {name}.") from exc
 
     def read_bytes(self, name):
         path = self.root / name
@@ -83,8 +132,11 @@ class LocalStorage:
 
     def write_bytes(self, name, payload):
         path = self.root / name
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(payload)
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(payload)
+        except OSError as exc:
+            raise StorageError(f"Unable to save {name}.") from exc
 
     def delete_bytes(self, name):
         path = self.root / name
@@ -133,7 +185,10 @@ class S3Storage:
 
     def write_json(self, name, data):
         body = json.dumps(data, indent=2).encode("utf-8")
-        self.client.put_object(Bucket=self.bucket, Key=self._key(name), Body=body, ContentType="application/json")
+        try:
+            self.client.put_object(Bucket=self.bucket, Key=self._key(name), Body=body, ContentType="application/json")
+        except (ClientError, BotoCoreError) as exc:
+            raise StorageError(f"Unable to save {name} to S3.") from exc
 
     def read_bytes(self, name):
         try:
@@ -144,7 +199,10 @@ class S3Storage:
 
     def write_bytes(self, name, payload):
         content_type = mimetypes.guess_type(name)[0] or "application/octet-stream"
-        self.client.put_object(Bucket=self.bucket, Key=self._key(name), Body=payload, ContentType=content_type)
+        try:
+            self.client.put_object(Bucket=self.bucket, Key=self._key(name), Body=payload, ContentType=content_type)
+        except (ClientError, BotoCoreError) as exc:
+            raise StorageError(f"Unable to save {name} to S3.") from exc
 
     def delete_bytes(self, name):
         try:
@@ -257,24 +315,34 @@ def decrypt_storage_value(value):
 
 
 def load_storage_settings(root):
-    path = Path(root) / STORAGE_SETTINGS_FILE
+    root = Path(root).resolve()
+    cached = _read_cached("storage_settings", str(root))
+    if cached is not None:
+        return cached
+    path = root / STORAGE_SETTINGS_FILE
     if not path.exists():
-        return storage_settings_default()
+        settings = storage_settings_default()
+        _write_cached("storage_settings", str(root), settings)
+        return settings
     try:
         with path.open("r", encoding="utf-8") as file:
             data = json.load(file)
     except (json.JSONDecodeError, OSError):
-        return storage_settings_default()
+        settings = storage_settings_default()
+        _write_cached("storage_settings", str(root), settings)
+        return settings
     settings = storage_settings_default()
     settings.update({key: data.get(key, value) for key, value in settings.items()})
     settings["s3_path_style"] = bool(settings.get("s3_path_style"))
     settings["s3_access_key"] = decrypt_storage_value(settings.get("s3_access_key_encrypted", ""))
     settings["s3_secret_key"] = decrypt_storage_value(settings.get("s3_secret_key_encrypted", ""))
+    _write_cached("storage_settings", str(root), settings)
     return settings
 
 
 def save_storage_settings(root, settings):
-    path = Path(root) / STORAGE_SETTINGS_FILE
+    root = Path(root).resolve()
+    path = root / STORAGE_SETTINGS_FILE
     payload = storage_settings_default()
     payload.update({key: settings.get(key, value) for key, value in payload.items()})
     payload["s3_path_style"] = bool(settings.get("s3_path_style", False))
@@ -282,8 +350,12 @@ def save_storage_settings(root, settings):
     payload["s3_secret_key_encrypted"] = encrypt_storage_value(settings.get("s3_secret_key", ""))
     payload.pop("s3_access_key", None)
     payload.pop("s3_secret_key", None)
-    with path.open("w", encoding="utf-8") as file:
-        json.dump(payload, file, indent=2)
+    try:
+        with path.open("w", encoding="utf-8") as file:
+            json.dump(payload, file, indent=2)
+    except OSError as exc:
+        raise StorageError(f"Unable to save {STORAGE_SETTINGS_FILE}.") from exc
+    _drop_cached("storage_settings", str(root))
 
 
 def migrate_legacy_local_files(source_root, destination_root):
@@ -318,9 +390,13 @@ def managed_media_url(kind, entry_id, filename):
 
 
 def ensure_storage_files(storage):
-    storage.write_json(DATA_FILE, storage.read_json(DATA_FILE, tracker_default()))
+    tracker_payload = storage.read_json(DATA_FILE, tracker_default())
+    users_payload = storage.read_json(USER_FILE, users_default())
+    storage.write_json(DATA_FILE, tracker_payload)
     storage.write_json(HASH_FILE, storage.read_json(HASH_FILE, hashes_default()))
-    storage.write_json(USER_FILE, storage.read_json(USER_FILE, users_default()))
+    storage.write_json(USER_FILE, users_payload)
+    _write_cached("tracker", _storage_identity(storage), tracker_payload)
+    _write_cached("users", _storage_identity(storage), users_payload)
 
 
 def legacy_profile():
@@ -332,7 +408,6 @@ def legacy_profile():
         "birthday_day": None,
         "birthday_last_processed_year": None,
         "gender": LEGACY_VALUE,
-        "pronouns": LEGACY_VALUE,
         "reproductive_organ": LEGACY_VALUE,
         "sexual_romantic_attraction": LEGACY_VALUE,
         "relationship_style": LEGACY_VALUE,
@@ -344,6 +419,10 @@ def legacy_profile():
 
 
 def load_users(storage):
+    cache_target = _storage_identity(storage)
+    cached = _read_cached("users", cache_target)
+    if cached is not None:
+        return cached
     data = storage.read_json(USER_FILE, users_default())
     data.setdefault("users", [])
     changed = False
@@ -396,11 +475,14 @@ def load_users(storage):
         changed = True
     if changed:
         save_users(storage, data)
+    else:
+        _write_cached("users", cache_target, data)
     return data
 
 
 def save_users(storage, data):
     storage.write_json(USER_FILE, data)
+    _write_cached("users", _storage_identity(storage), data)
 
 
 def load_saved_hashes(storage):
@@ -446,6 +528,10 @@ def sync_saved_hashes_with_tracker(storage, data):
 
 
 def load_data(storage):
+    cache_target = _storage_identity(storage)
+    cached = _read_cached("tracker", cache_target)
+    if cached is not None:
+        return cached
     data = storage.read_json(DATA_FILE, tracker_default())
     data.setdefault("alters", {})
     data.setdefault("locations", {})
@@ -554,11 +640,14 @@ def load_data(storage):
     if changed:
         save_data(storage, data)
         sync_saved_hashes_with_tracker(storage, data)
+    else:
+        _write_cached("tracker", cache_target, data)
     return data
 
 
 def save_data(storage, data):
     storage.write_json(DATA_FILE, data)
+    _write_cached("tracker", _storage_identity(storage), data)
 
 
 def get_synced_hashes(storage):
@@ -839,7 +928,6 @@ def save_alter_profile(storage, alter_id, form):
         profile["birthday_day"] = None
         profile["birthday_last_processed_year"] = None
     profile["gender"] = form.get("gender", "") or LEGACY_VALUE
-    profile["pronouns"] = form.get("pronouns", "").strip() or LEGACY_VALUE
     profile["reproductive_organ"] = form.get("reproductive_organ", "") or LEGACY_VALUE
     profile["sexual_romantic_attraction"] = form.get("attraction", "").strip() or LEGACY_VALUE
     profile["relationship_style"] = form.get("relationship_style", "") or LEGACY_VALUE
@@ -1196,7 +1284,6 @@ def build_alter_view(data, alter_id, user_level=4):
             ("Age", format_age(profile)),
             ("Birthday", birthday_summary(profile)),
             ("Gender", profile.get("gender", LEGACY_VALUE)),
-            ("Pronouns", profile.get("pronouns", LEGACY_VALUE)),
             ("Reproductive Organ", profile.get("reproductive_organ", LEGACY_VALUE)),
             ("Sexual/Romantic Attraction", profile.get("sexual_romantic_attraction", LEGACY_VALUE)),
             ("Relationship Style", profile.get("relationship_style", LEGACY_VALUE)),
@@ -1259,8 +1346,13 @@ def save_uploaded_json(storage, target_name, raw_bytes):
     except (UnicodeDecodeError, json.JSONDecodeError):
         return False, "Uploaded file is not valid JSON."
     storage.write_json(target_name, payload)
+    cache_target = _storage_identity(storage)
     if target_name == DATA_FILE:
+        _drop_cached("tracker", cache_target)
         load_data(storage)
+    elif target_name == USER_FILE:
+        _drop_cached("users", cache_target)
+        load_users(storage)
     return True, f"Imported {target_name}."
 
 
@@ -1268,5 +1360,7 @@ def migrate_storage_data(source_storage, destination_storage):
     destination_storage.write_json(DATA_FILE, source_storage.read_json(DATA_FILE, tracker_default()))
     destination_storage.write_json(HASH_FILE, source_storage.read_json(HASH_FILE, hashes_default()))
     destination_storage.write_json(USER_FILE, source_storage.read_json(USER_FILE, users_default()))
+    _drop_cached("tracker", _storage_identity(destination_storage))
+    _drop_cached("users", _storage_identity(destination_storage))
     ensure_storage_files(destination_storage)
     return True, "Migrated tracker, hash, and user data."
