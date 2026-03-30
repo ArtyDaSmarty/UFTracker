@@ -238,6 +238,7 @@ def tracker_default():
         "alter_profiles": {},
         "location_galleries": {},
         "document_records": {},
+        "affiliation_records": {},
     }
 
 
@@ -418,6 +419,13 @@ def legacy_document():
     }
 
 
+def legacy_affiliation():
+    return {
+        "summary": "",
+        "timeline": [],
+    }
+
+
 def load_users(storage):
     data = storage.read_json(USER_FILE, users_default())
     data.setdefault("users", [])
@@ -568,6 +576,7 @@ def load_data(storage):
     data.setdefault("location_galleries", {})
     data.setdefault("location_gallery_locks", {})
     data.setdefault("document_records", {})
+    data.setdefault("affiliation_records", {})
     data["last_modified"].setdefault("alters", {})
     data["last_modified"].setdefault("locations", {})
     data["last_modified"].setdefault("affiliations", {})
@@ -662,6 +671,11 @@ def load_data(storage):
         if affiliation_id not in data["last_modified"]["affiliations"]:
             data["last_modified"]["affiliations"][affiliation_id] = ""
             changed = True
+        record = data["affiliation_records"].setdefault(affiliation_id, legacy_affiliation())
+        if "summary" not in record:
+            record["summary"] = ""
+            changed = True
+        record["timeline"] = normalize_memory_entries(record.get("timeline", []))
 
     for document_id in data["documents"]:
         if document_id not in data["last_modified"]["documents"]:
@@ -789,6 +803,8 @@ def create_entry_with_level(storage, bucket_name, entity_label, name, entry_id, 
         data.setdefault("location_gallery_locks", {})[entry_id] = False
     elif bucket_name == "documents":
         data["document_records"].setdefault(entry_id, legacy_document())
+    elif bucket_name == "affiliations":
+        data["affiliation_records"].setdefault(entry_id, legacy_affiliation())
     save_data(storage, data)
     sync_saved_hashes_with_tracker(storage, data)
     return True, f"Created {entity_label}: {name} ({entry_id})"
@@ -1375,6 +1391,51 @@ def set_document_locked(storage, document_id, locked):
     return True, "Document lock updated."
 
 
+def save_affiliation_summary(storage, affiliation_id, summary):
+    data = load_data(storage)
+    if affiliation_id not in data["affiliations"]:
+        return False, "Unknown affiliation."
+    record = data["affiliation_records"].setdefault(affiliation_id, legacy_affiliation())
+    record["summary"] = str(summary or "").strip()
+    touch_entry(data, "affiliations", affiliation_id)
+    save_data(storage, data)
+    return True, "Saved affiliation summary."
+
+
+def update_affiliation_timeline(storage, affiliation_id, date_text, note_text, order_ids=None):
+    data = load_data(storage)
+    if affiliation_id not in data["affiliations"]:
+        return False, "Unknown affiliation."
+    record = data["affiliation_records"].setdefault(affiliation_id, legacy_affiliation())
+    entries = normalize_memory_entries(record.get("timeline", []))
+    date_text = str(date_text or "").strip()
+    note_text = str(note_text or "").strip()
+    if date_text or note_text:
+        entries.append({"id": secrets.token_hex(8), "date": date_text, "text": note_text})
+    if order_ids:
+        order_lookup = {item["id"]: index for index, item in enumerate(order_ids)}
+        entries.sort(key=lambda item: (order_lookup.get(item["id"], len(order_lookup)), item["id"]))
+    record["timeline"] = entries
+    touch_entry(data, "affiliations", affiliation_id)
+    save_data(storage, data)
+    return True, "Updated affiliation timeline."
+
+
+def remove_affiliation_timeline_entry(storage, affiliation_id, entry_id):
+    data = load_data(storage)
+    if affiliation_id not in data["affiliations"]:
+        return False, "Unknown affiliation."
+    record = data["affiliation_records"].setdefault(affiliation_id, legacy_affiliation())
+    timeline = normalize_memory_entries(record.get("timeline", []))
+    updated = [item for item in timeline if item["id"] != entry_id]
+    if len(updated) == len(timeline):
+        return False, "That timeline entry was not found."
+    record["timeline"] = updated
+    touch_entry(data, "affiliations", affiliation_id)
+    save_data(storage, data)
+    return True, "Removed affiliation timeline entry."
+
+
 def delete_entry(storage, kind, entry_id):
     data = load_data(storage)
     bucket_map = {"alter": "alters", "location": "locations", "affiliation": "affiliations", "document": "documents"}
@@ -1406,6 +1467,7 @@ def delete_entry(storage, kind, entry_id):
     else:
         if kind == "affiliation":
             data["affiliations"].pop(entry_id, None)
+            data["affiliation_records"].pop(entry_id, None)
             for profile in data["alter_profiles"].values():
                 profile["affiliations"] = [item for item in profile.get("affiliations", []) if item["value"] != entry_id]
             data["last_modified"]["affiliations"].pop(entry_id, None)
@@ -1689,6 +1751,7 @@ def build_location_view(data, location_id, user_level=4):
 def build_affiliation_view(data, affiliation_id, user_level=4):
     if not entry_is_accessible(data, "affiliation", affiliation_id, user_level):
         return None
+    record = data["affiliation_records"].get(affiliation_id, legacy_affiliation())
     current_members = []
     former_members = []
     for alter_id, profile in data["alter_profiles"].items():
@@ -1702,6 +1765,8 @@ def build_affiliation_view(data, affiliation_id, user_level=4):
     return {
         "id": affiliation_id,
         "name": data["affiliations"][affiliation_id],
+        "summary": record.get("summary", ""),
+        "timeline": record.get("timeline", []),
         "current_members": sorted(current_members, key=lambda item: item["name"].casefold()),
         "former_members": sorted(former_members, key=lambda item: item["name"].casefold()),
     }

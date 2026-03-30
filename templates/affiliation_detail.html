@@ -9,6 +9,16 @@
       <label>Affiliation name<input name="name" value="{{ view.name }}"></label>
       <button>Rename Affiliation</button>
     </form>
+    <form method="post" action="{{ url_for('update_affiliation_summary', affiliation_id=view.id) }}" class="stack compact top-gap">
+      <label>Summary<textarea name="summary" rows="5" placeholder="Add an affiliation summary">{{ view.summary }}</textarea></label>
+      <button>Save Summary</button>
+    </form>
+    {% endif %}
+    {% if view.summary %}
+    <div class="top-gap">
+      <h3>Summary</h3>
+      <p class="timeline-text">{{ view.summary }}</p>
+    </div>
     {% endif %}
     <h3 class="top-gap">Current Alters</h3>
     {% for alter in view.current_members %}
@@ -25,5 +35,47 @@
     <p class="muted">No visible former alters.</p>
     {% endfor %}
   </div>
+</section>
+
+<section class="card top-gap">
+  <h3>Timeline</h3>
+  {% if can_view_memory %}
+  {% if can_create_records %}
+  <form method="post" action="{{ url_for('update_affiliation_timeline_route', affiliation_id=view.id) }}" class="stack compact">
+    <label>Date<input name="timeline_date" placeholder="XX/XX/XXXX or ??/??/????"></label>
+    <label>Timeline Note<textarea name="timeline_text" rows="3" placeholder="What was significant about this date?"></textarea></label>
+    <button class="primary" name="action" value="add">Add Timeline Entry</button>
+  </form>
+  {% endif %}
+
+  {% if view.timeline %}
+  <form method="post" action="{{ url_for('update_affiliation_timeline_route', affiliation_id=view.id) }}" class="stack compact top-gap" data-sortable-form>
+    <input type="hidden" name="action" value="reorder">
+    <input type="hidden" name="entry_id" value="">
+    <div class="sortable-list stack compact" data-sortable-list>
+      {% for entry in view.timeline %}
+      <div class="timeline-entry" draggable="true" data-sortable-item data-entry-id="{{ entry.id }}">
+        <input type="hidden" name="ordered_ids" value="{{ entry.id }}">
+        <div class="timeline-entry-head">
+          <span class="drag-handle" title="Drag to reorder">::</span>
+          <strong>{{ entry.date or 'Unknown Date' }}</strong>
+        </div>
+        <p class="timeline-text">{{ entry.text }}</p>
+        {% if can_create_records %}
+        <button type="button" data-remove-entry="{{ entry.id }}">Remove</button>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% if can_create_records %}
+    <button class="primary" name="action" value="reorder">Save Timeline Order</button>
+    {% endif %}
+  </form>
+  {% else %}
+  <p class="muted top-gap">No timeline entries yet.</p>
+  {% endif %}
+  {% else %}
+  <p class="muted">You cannot view timelines because your account does not have Memory Tree permission.</p>
+  {% endif %}
 </section>
 {% endblock %}
