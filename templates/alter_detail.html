@@ -99,7 +99,7 @@
 
     <h3 class="top-gap">Relations</h3>
     {% if can_create_records %}
-    <form method="post" action="{{ url_for('update_relation', alter_id=view.id) }}" class="stack compact" data-async="swap">
+    <form method="post" action="{{ url_for('update_relation', alter_id=view.id) }}" class="stack compact">
       <label>Other Alter
         <input name="other_id" list="alter-options" placeholder="Search by alter name or ID">
       </label>
@@ -119,7 +119,7 @@
       <label class="top-gap">Filter Alters
         <input type="search" placeholder="Search by alter name or ID" data-filter-target=".bulk-row" data-filter-value=".bulk-row-label">
       </label>
-      <form method="post" action="{{ url_for('bulk_relations', alter_id=view.id) }}" class="stack compact" data-async="swap">
+      <form method="post" action="{{ url_for('bulk_relations', alter_id=view.id) }}" class="stack compact">
         {% for row in view.bulk_rows %}
         <div class="bulk-row">
           <label class="bulk-row-label"><input type="checkbox" name="selected_ids" value="{{ row.id }}"> <span>{{ row.name }} ({{ row.id }})</span></label>
