@@ -4,10 +4,15 @@
   <div class="card">
     <h2>Storage</h2>
     <p><strong>Backend:</strong> {{ backend }}</p>
+    <p><strong>Endpoint:</strong> {{ endpoint or 'Not configured' }}</p>
     <p><strong>S3 Bucket:</strong> {{ bucket or 'Not configured' }}</p>
+    <p><strong>Region:</strong> {{ region or 'auto' }}</p>
     <p><strong>S3 Prefix:</strong> {{ prefix or 'Not configured' }}</p>
+    <p><strong>Path Style:</strong> {{ 'Enabled' if path_style else 'Disabled' }}</p>
+    <p><strong>Access Key:</strong> {{ 'Stored securely' if has_access_key else 'Not configured' }}</p>
+    <p><strong>Secret Key:</strong> {{ 'Stored securely' if has_secret_key else 'Not configured' }}</p>
     <p><strong>Data Directory:</strong> <code>{{ data_dir }}</code></p>
-    <p class="muted">Settings are saved in <code>{{ config_file }}</code> inside the data directory. Environment variables still override them if present.</p>
+    <p class="muted">Settings are saved in <code>{{ config_file }}</code> inside the data directory. Access and secret keys are encrypted at rest; environment variables still override saved values if present.</p>
   </div>
 
   <div class="card">
@@ -16,14 +21,21 @@
       <label>Backend
         <select name="backend">
           <option value="local" {% if backend == 'local' %}selected{% endif %}>Local</option>
-          <option value="s3" {% if backend == 's3' %}selected{% endif %}>S3</option>
+          <option value="s3" {% if backend == 's3' %}selected{% endif %}>S3-Compatible</option>
         </select>
       </label>
-      <label>S3 Bucket<input name="s3_bucket" value="{{ bucket }}"></label>
-      <label>S3 Prefix<input name="s3_prefix" value="{{ prefix }}"></label>
+      <label>Endpoint<input name="s3_endpoint" value="{{ endpoint }}" placeholder="https://s3.example.com"></label>
+      <label>Bucket<input name="s3_bucket" value="{{ bucket }}"></label>
+      <label>Region<input name="s3_region" value="{{ region }}" placeholder="auto"></label>
+      <label>Access Key<input name="s3_access_key" placeholder="{% if has_access_key %}Stored securely{% else %}Enter access key{% endif %}"></label>
+      <label>Secret Key<input name="s3_secret_key" type="password" placeholder="{% if has_secret_key %}Stored securely{% else %}Enter secret key{% endif %}"></label>
+      <label>Prefix<input name="s3_prefix" value="{{ prefix }}"></label>
+      <label class="theme-toggle"><input type="checkbox" name="s3_path_style" {% if path_style %}checked{% endif %}> Path Style</label>
+      <p class="muted">Enable path-style for S3-compatible providers that do not support bucket subdomains.</p>
       <button class="primary" name="action" value="save">Save Storage Settings</button>
       <button name="action" value="migrate">Save And Migrate Data</button>
     </form>
+    <p class="muted">Leave access and secret key blank to keep the currently stored secure values.</p>
     <p class="muted">Use migrate after switching to S3 so your tracker, hashes, and users move from the persistent volume into the configured backend.</p>
   </div>
 </section>
