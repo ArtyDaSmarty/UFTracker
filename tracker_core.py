@@ -423,6 +423,8 @@ def legacy_affiliation():
     return {
         "summary": "",
         "timeline": [],
+        "gallery": [],
+        "gallery_locked": False,
     }
 
 
@@ -672,10 +674,13 @@ def load_data(storage):
             data["last_modified"]["affiliations"][affiliation_id] = ""
             changed = True
         record = data["affiliation_records"].setdefault(affiliation_id, legacy_affiliation())
-        if "summary" not in record:
-            record["summary"] = ""
-            changed = True
+        for key, default_value in legacy_affiliation().items():
+            if key not in record:
+                record[key] = default_value
+                changed = True
         record["timeline"] = normalize_memory_entries(record.get("timeline", []))
+        record["gallery"] = [item for item in record.get("gallery", []) if str(item).strip()]
+        record["gallery_locked"] = bool(record.get("gallery_locked", False))
 
     for document_id in data["documents"]:
         if document_id not in data["last_modified"]["documents"]:
@@ -843,6 +848,8 @@ def is_gallery_locked(data, kind, entry_id):
         return bool(data["alter_profiles"].get(entry_id, {}).get("gallery_locked", False))
     if kind == "location":
         return bool(data.get("location_gallery_locks", {}).get(entry_id, False))
+    if kind == "affiliation":
+        return bool(data["affiliation_records"].get(entry_id, {}).get("gallery_locked", False))
     return False
 
 
@@ -1257,14 +1264,19 @@ def add_gallery_item(storage, kind, entry_id, image_url):
         if entry_id not in data["alters"]:
             return False, "Unknown alter."
         gallery = data["alter_profiles"].setdefault(entry_id, legacy_profile()).setdefault("gallery", [])
-    else:
+    elif kind == "location":
         if entry_id not in data["locations"]:
             return False, "Unknown location."
         gallery = data["location_galleries"].setdefault(entry_id, [])
+    else:
+        if entry_id not in data["affiliations"]:
+            return False, "Unknown affiliation."
+        gallery = data["affiliation_records"].setdefault(entry_id, legacy_affiliation()).setdefault("gallery", [])
     if image_url in gallery:
         return False, "That image is already in the gallery."
     gallery.append(image_url)
-    touch_entry(data, "alters" if kind == "alter" else "locations", entry_id)
+    bucket = "alters" if kind == "alter" else "locations" if kind == "location" else "affiliations"
+    touch_entry(data, bucket, entry_id)
     save_data(storage, data)
     return True, "Added gallery image."
 
@@ -1277,11 +1289,16 @@ def set_gallery_locked(storage, kind, entry_id, locked):
             return False, "Unknown alter."
         data["alter_profiles"].setdefault(entry_id, legacy_profile())["gallery_locked"] = locked
         touch_entry(data, "alters", entry_id)
-    else:
+    elif kind == "location":
         if entry_id not in data["locations"]:
             return False, "Unknown location."
         data.setdefault("location_gallery_locks", {})[entry_id] = locked
         touch_entry(data, "locations", entry_id)
+    else:
+        if entry_id not in data["affiliations"]:
+            return False, "Unknown affiliation."
+        data["affiliation_records"].setdefault(entry_id, legacy_affiliation())["gallery_locked"] = locked
+        touch_entry(data, "affiliations", entry_id)
     save_data(storage, data)
     return True, "Gallery lock updated."
 
@@ -1308,14 +1325,19 @@ def remove_gallery_item(storage, kind, entry_id, image_url):
         if entry_id not in data["alters"]:
             return False, "Unknown alter."
         gallery = data["alter_profiles"].setdefault(entry_id, legacy_profile()).setdefault("gallery", [])
-    else:
+    elif kind == "location":
         if entry_id not in data["locations"]:
             return False, "Unknown location."
         gallery = data["location_galleries"].setdefault(entry_id, [])
+    else:
+        if entry_id not in data["affiliations"]:
+            return False, "Unknown affiliation."
+        gallery = data["affiliation_records"].setdefault(entry_id, legacy_affiliation()).setdefault("gallery", [])
     if image_url not in gallery:
         return False, "That image was not found in the gallery."
     gallery.remove(image_url)
-    touch_entry(data, "alters" if kind == "alter" else "locations", entry_id)
+    bucket = "alters" if kind == "alter" else "locations" if kind == "location" else "affiliations"
+    touch_entry(data, bucket, entry_id)
     save_data(storage, data)
     return True, "Removed gallery image."
 
@@ -1514,6 +1536,8 @@ def migrate_gallery_media(storage, data_root):
         gallery_sets.append(("alter", alter_id, profile.get("gallery", [])))
     for location_id, gallery in data.get("location_galleries", {}).items():
         gallery_sets.append(("location", location_id, gallery))
+    for affiliation_id, record in data.get("affiliation_records", {}).items():
+        gallery_sets.append(("affiliation", affiliation_id, record.get("gallery", [])))
     for kind, entry_id, gallery in gallery_sets:
         updated = []
         for item in gallery:
@@ -1533,8 +1557,10 @@ def migrate_gallery_media(storage, data_root):
                 updated.append(item)
         if kind == "alter":
             data["alter_profiles"].setdefault(entry_id, legacy_profile())["gallery"] = updated
-        else:
+        elif kind == "location":
             data["location_galleries"][entry_id] = updated
+        else:
+            data["affiliation_records"].setdefault(entry_id, legacy_affiliation())["gallery"] = updated
     if changed:
         save_data(storage, data)
     return changed
@@ -1767,6 +1793,8 @@ def build_affiliation_view(data, affiliation_id, user_level=4):
         "name": data["affiliations"][affiliation_id],
         "summary": record.get("summary", ""),
         "timeline": record.get("timeline", []),
+        "gallery": list(record.get("gallery", [])),
+        "gallery_locked": bool(record.get("gallery_locked", False)),
         "current_members": sorted(current_members, key=lambda item: item["name"].casefold()),
         "former_members": sorted(former_members, key=lambda item: item["name"].casefold()),
     }
