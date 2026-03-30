@@ -160,6 +160,69 @@
         item.hidden = query ? !haystack.includes(query) : false;
       });
     });
+
+    document.addEventListener('click', (event) => {
+      const removeButton = event.target.closest('[data-remove-entry]');
+      if (!removeButton) {
+        return;
+      }
+      const form = removeButton.closest('form[data-sortable-form]');
+      if (!form) {
+        return;
+      }
+      const actionInput = form.querySelector('input[name="action"]');
+      const entryInput = form.querySelector('input[name="entry_id"]');
+      if (actionInput) {
+        actionInput.value = 'remove';
+      }
+      if (entryInput) {
+        entryInput.value = removeButton.dataset.removeEntry || '';
+      }
+      if (typeof form.requestSubmit === 'function') {
+        form.requestSubmit();
+      } else {
+        form.submit();
+      }
+    });
+
+    document.addEventListener('dragstart', (event) => {
+      const item = event.target.closest('[data-sortable-item]');
+      if (!item) {
+        return;
+      }
+      item.classList.add('dragging');
+      event.dataTransfer.effectAllowed = 'move';
+      event.dataTransfer.setData('text/plain', item.dataset.entryId || '');
+    });
+
+    document.addEventListener('dragend', (event) => {
+      const item = event.target.closest('[data-sortable-item]');
+      if (item) {
+        item.classList.remove('dragging');
+      }
+    });
+
+    document.addEventListener('dragover', (event) => {
+      const list = event.target.closest('[data-sortable-list]');
+      const dragging = document.querySelector('[data-sortable-item].dragging');
+      if (!list || !dragging) {
+        return;
+      }
+      event.preventDefault();
+      const siblings = [...list.querySelectorAll('[data-sortable-item]:not(.dragging)')];
+      const nextSibling = siblings.find((item) => event.clientY < item.getBoundingClientRect().top + item.offsetHeight / 2);
+      if (nextSibling) {
+        list.insertBefore(dragging, nextSibling);
+      } else {
+        list.appendChild(dragging);
+      }
+      list.querySelectorAll('input[name="ordered_ids"], input[name="ordered_note_ids"]').forEach((input) => {
+        const owner = input.closest('[data-sortable-item]');
+        if (owner) {
+          input.value = owner.dataset.entryId || '';
+        }
+      });
+    });
   </script>
 </body>
 </html>
