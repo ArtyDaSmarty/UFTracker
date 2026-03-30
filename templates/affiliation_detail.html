@@ -78,4 +78,46 @@
   <p class="muted">You cannot view timelines because your account does not have Memory Tree permission.</p>
   {% endif %}
 </section>
+
+<section class="card top-gap">
+  <h3>Gallery</h3>
+  {% if can_create_records %}
+  <form method="post" action="{{ url_for('update_gallery_lock', kind='affiliation', entry_id=view.id) }}" class="stack compact" data-async="swap">
+    <label class="check-row"><input type="checkbox" name="gallery_locked" {% if view.gallery_locked %}checked{% endif %}><span>Lock this gallery</span></label>
+    <button>Save Gallery Lock</button>
+  </form>
+  {% endif %}
+  {% if can_view_gallery %}
+  {% if can_create_records %}
+  <form method="post" action="{{ url_for('update_gallery', kind='affiliation', entry_id=view.id) }}" class="stack compact" enctype="multipart/form-data" data-async="swap">
+    <label>Image URL<input name="image_url" placeholder="https://example.com/image.png"></label>
+    <label>Upload Image<input name="image_file" type="file" accept=".jpg,.jpeg,.png,.gif,.webp"></label>
+    <button class="primary" name="action" value="add">Add To Gallery</button>
+  </form>
+  {% endif %}
+  <div class="gallery-grid top-gap">
+    {% for image_url in view.gallery %}
+    <div class="gallery-card">
+      {% if loop.first %}
+      <img src="{{ image_url }}" alt="Gallery image for {{ view.name }}" loading="lazy">
+      {% else %}
+      <button type="button" class="gallery-load-button" data-gallery-load>Spoiler: Click to load image</button>
+      <img data-src="{{ image_url }}" alt="Gallery image for {{ view.name }}" loading="lazy" hidden>
+      {% endif %}
+      <a class="muted wrap-anywhere" href="{{ image_url }}" target="_blank" rel="noreferrer">{{ image_url }}</a>
+      {% if can_create_records %}
+      <form method="post" action="{{ url_for('update_gallery', kind='affiliation', entry_id=view.id) }}" data-async="swap">
+        <input type="hidden" name="image_url" value="{{ image_url }}">
+        <button name="action" value="remove">Remove</button>
+      </form>
+      {% endif %}
+    </div>
+    {% else %}
+    <p class="muted">No gallery images yet.</p>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="muted">{% if view.gallery_locked %}This gallery is locked. You do not have permission to view locked galleries.{% else %}You cannot view galleries because your account does not have permission.{% endif %}</p>
+  {% endif %}
+</section>
 {% endblock %}
