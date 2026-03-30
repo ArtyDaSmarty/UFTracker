@@ -16,6 +16,7 @@ from tracker_core import (
     ORGAN_OPTIONS,
     RELATIONSHIP_STYLE_OPTIONS,
     STATUS_OPTIONS,
+    StorageError,
     STORAGE_SETTINGS_FILE,
     USER_FILE,
     USER_LEVEL_OPTIONS,
@@ -79,11 +80,22 @@ ensure_storage_files(storage)
 migrate_gallery_media(storage, DATA_DIR)
 
 
+@app.errorhandler(StorageError)
+def handle_storage_error(error):
+    clear_request_caches()
+    message = str(error) or "Storage is unavailable right now."
+    if is_async_request():
+        return jsonify({"ok": False, "message": message, "category": "error"}), 503
+    flash(message, "error")
+    return redirect(request.referrer or url_for("dashboard"))
+
+
 def refresh_storage():
     global storage
     storage = get_storage(DATA_DIR)
     ensure_storage_files(storage)
     migrate_gallery_media(storage, DATA_DIR)
+    clear_request_caches()
     return storage
 
 
