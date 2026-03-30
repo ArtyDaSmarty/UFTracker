@@ -249,6 +249,7 @@ def inject_globals():
     user = current_user()
     storage_settings = get_storage_settings_data()
     site_settings = get_site_settings_data()
+    favicon_name = site_settings.get("favicon_name", "").strip()
     return {
         "current_user": user,
         "current_role": user["role"] if user else None,
@@ -266,7 +267,7 @@ def inject_globals():
         "storage_settings": storage_settings,
         "site_settings": site_settings,
         "site_name": site_settings.get("site_name", "United Front Technical Database"),
-        "favicon_url": url_for("site_favicon") if site_settings.get("favicon_name") else "",
+        "favicon_url": url_for("site_favicon", v=favicon_name) if favicon_name else "",
         "data_dir": str(DATA_DIR),
     }
 
@@ -334,7 +335,7 @@ def admin_branding():
                 old_path = branding_dir / updated["favicon_name"]
                 if old_path.exists():
                     old_path.unlink()
-            filename = f"favicon{suffix}"
+            filename = f"favicon-{os.urandom(8).hex()}{suffix}"
             (branding_dir / filename).write_bytes(favicon.read())
             updated["favicon_name"] = filename
         save_site_settings(DATA_DIR, updated)
@@ -603,13 +604,14 @@ def update_alter_affiliations(alter_id):
         flash("You do not have access to that alter.", "error")
         return redirect(url_for("dashboard"))
     affiliation_id = resolve_entry_reference(data, "affiliation", request.form.get("affiliation_id", ""), user_level)
+    status = request.form.get("status", "Current")
     if affiliation_id and not entry_is_accessible(data, "affiliation", affiliation_id, user_level):
         flash("You do not have access to that affiliation.", "error")
         return redirect(url_for("alter_detail", alter_id=alter_id))
     if request.form.get("action") == "remove":
         success, message = remove_affiliation_membership(storage, alter_id, affiliation_id)
     else:
-        success, message = update_affiliation_membership(storage, alter_id, affiliation_id, request.form.get("status", "Current"))
+        success, message = update_affiliation_membership(storage, alter_id, affiliation_id, status)
     flash(message, "success" if success else "error")
     clear_request_caches()
     return redirect(url_for("alter_detail", alter_id=alter_id))
