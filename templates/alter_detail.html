@@ -132,6 +132,119 @@
   </div>
 </section>
 
+<section class="grid cols-2 top-gap">
+  <div class="card">
+    <h3>Memory Tree</h3>
+    {% if can_create_records %}
+    <form method="post" action="{{ url_for('update_alter_memory', alter_id=view.id) }}" class="stack compact" data-async="swap">
+      <label>Section
+        <select name="era">
+          <option value="pre_systemhood">Pre-Systemhood</option>
+          <option value="current">Current</option>
+        </select>
+      </label>
+      <label>Date<input name="memory_date" placeholder="XX/XX/XXXX or ??/??/????"></label>
+      <label>Memory Note<textarea name="memory_text" rows="3" placeholder="What was significant about this date?"></textarea></label>
+      <button class="primary" name="action" value="add">Add Timeline Entry</button>
+    </form>
+    {% endif %}
+
+    {% if view.memory_tree.pre_systemhood %}
+    <div class="top-gap">
+      <h4>Pre-Systemhood</h4>
+      <form method="post" action="{{ url_for('update_alter_memory', alter_id=view.id) }}" class="stack compact" data-async="swap" data-sortable-form>
+        <input type="hidden" name="era" value="pre_systemhood">
+        <input type="hidden" name="action" value="reorder">
+        <input type="hidden" name="entry_id" value="">
+        <div class="sortable-list stack compact" data-sortable-list>
+          {% for entry in view.memory_tree.pre_systemhood %}
+          <div class="timeline-entry" draggable="true" data-sortable-item data-entry-id="{{ entry.id }}">
+            <input type="hidden" name="ordered_ids" value="{{ entry.id }}">
+            <div class="timeline-entry-head">
+              <span class="drag-handle" title="Drag to reorder">::</span>
+              <strong>{{ entry.date or 'Unknown Date' }}</strong>
+            </div>
+            <p class="timeline-text">{{ entry.text }}</p>
+            {% if can_create_records %}
+            <button type="button" data-remove-entry="{{ entry.id }}">Remove</button>
+            {% endif %}
+          </div>
+          {% endfor %}
+        </div>
+        {% if can_create_records %}
+        <button class="primary" name="action" value="reorder">Save Order</button>
+        {% endif %}
+      </form>
+    </div>
+    {% endif %}
+
+    {% if view.memory_tree.current %}
+    <div class="top-gap">
+      <h4>Current</h4>
+      <form method="post" action="{{ url_for('update_alter_memory', alter_id=view.id) }}" class="stack compact" data-async="swap" data-sortable-form>
+        <input type="hidden" name="era" value="current">
+        <input type="hidden" name="action" value="reorder">
+        <input type="hidden" name="entry_id" value="">
+        <div class="sortable-list stack compact" data-sortable-list>
+          {% for entry in view.memory_tree.current %}
+          <div class="timeline-entry" draggable="true" data-sortable-item data-entry-id="{{ entry.id }}">
+            <input type="hidden" name="ordered_ids" value="{{ entry.id }}">
+            <div class="timeline-entry-head">
+              <span class="drag-handle" title="Drag to reorder">::</span>
+              <strong>{{ entry.date or 'Unknown Date' }}</strong>
+            </div>
+            <p class="timeline-text">{{ entry.text }}</p>
+            {% if can_create_records %}
+            <button type="button" data-remove-entry="{{ entry.id }}">Remove</button>
+            {% endif %}
+          </div>
+          {% endfor %}
+        </div>
+        {% if can_create_records %}
+        <button class="primary" name="action" value="reorder">Save Order</button>
+        {% endif %}
+      </form>
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h3>Notes</h3>
+    {% if can_create_records %}
+    <form method="post" action="{{ url_for('update_alter_notes', alter_id=view.id) }}" class="stack compact" data-async="swap">
+      <label>New Note<textarea name="note_text" rows="3" placeholder="Add a note"></textarea></label>
+      <button class="primary" name="action" value="add">Add Note</button>
+    </form>
+    {% endif %}
+
+    {% if view.notes %}
+    <form method="post" action="{{ url_for('update_alter_notes', alter_id=view.id) }}" class="stack compact top-gap" data-async="swap" data-sortable-form>
+      <input type="hidden" name="action" value="reorder">
+      <input type="hidden" name="entry_id" value="">
+      <div class="sortable-list stack compact" data-sortable-list>
+        {% for note in view.notes %}
+        <div class="timeline-entry note-entry" draggable="true" data-sortable-item data-entry-id="{{ note.id }}">
+          <input type="hidden" name="ordered_note_ids" value="{{ note.id }}">
+          <div class="timeline-entry-head">
+            <span class="drag-handle" title="Drag to reorder">::</span>
+          </div>
+          <p class="timeline-text">{{ note.text }}</p>
+          {% if can_create_records %}
+          <button type="button" data-remove-entry="{{ note.id }}">Remove</button>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      {% if can_create_records %}
+      <button class="primary" name="action" value="reorder">Save Notes Order</button>
+      {% endif %}
+    </form>
+    {% else %}
+    <p class="muted top-gap">No notes yet.</p>
+    {% endif %}
+  </div>
+</section>
+
 <section class="card top-gap">
   <h3>Gallery</h3>
   {% if can_create_records %}
