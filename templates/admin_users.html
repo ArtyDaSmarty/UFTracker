@@ -2,7 +2,7 @@
 {% block content %}
 <section class="card">
   <h2>User Management</h2>
-  <p class="muted">Admins always keep full access. For everyone else, you can control creation access, Memory Tree access, Profile Lock access, Relation Lock access, and Locked Galleries access directly.</p>
+  <p class="muted">Admins always keep full access. For everyone else, you can control creation access, Memory Tree access, Profile Lock access, Relation Lock access, Document Lock access, and Locked Galleries access directly.</p>
   {% for user in users %}
   <form method="post" class="stack compact bordered">
     <input type="hidden" name="user_id" value="{{ user.id }}">
@@ -24,6 +24,15 @@
 
     <label class="check-row"><input type="checkbox" name="memory_tree_permission" {% if user.memory_tree_permission %}checked{% endif %}><span>Memory Tree permission</span></label>
     <button name="action" value="memory">Save Memory Tree Permission</button>
+
+    <label class="check-row"><input type="checkbox" name="profile_permission" {% if user.profile_permission %}checked{% endif %}><span>Profile Lock permission</span></label>
+    <button name="action" value="profile">Save Profile Lock Permission</button>
+
+    <label class="check-row"><input type="checkbox" name="relation_permission" {% if user.relation_permission %}checked{% endif %}><span>Relation Lock permission</span></label>
+    <button name="action" value="relations">Save Relation Lock Permission</button>
+
+    <label class="check-row"><input type="checkbox" name="document_permission" {% if user.document_permission %}checked{% endif %}><span>Document Lock permission</span></label>
+    <button name="action" value="document">Save Document Lock Permission</button>
 
     <label class="check-row"><input type="checkbox" name="locked_gallery_permission" {% if user.locked_gallery_permission %}checked{% endif %}><span>Locked Galleries permission</span></label>
     <button name="action" value="locked_gallery">Save Locked Galleries Permission</button>
