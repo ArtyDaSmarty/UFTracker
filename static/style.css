@@ -74,6 +74,9 @@ button.primary:hover, .button-link:hover { background: var(--accent-2); }
 .gallery-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(180px, 240px)); justify-content: start; }
 .gallery-card { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 16px; background: color-mix(in srgb, var(--card) 82%, var(--sidebar)); align-content: start; }
 .gallery-card img { display: block; width: 100%; max-height: 220px; object-fit: contain; object-position: center top; border-radius: 12px; border: 1px solid var(--line); background: var(--sidebar); }
+.gallery-card img[hidden] { display: none; }
+.gallery-load-button { width: 100%; min-height: 160px; padding: 16px; border-radius: 12px; border: 1px dashed var(--line); background: color-mix(in srgb, var(--sidebar) 82%, var(--card)); color: var(--text); font: inherit; cursor: pointer; }
+.gallery-load-button:hover { background: color-mix(in srgb, var(--accent) 10%, var(--sidebar)); }
 @media (max-width: 1200px) {
   .cols-5, .cols-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .cols-4, .cols-2 { grid-template-columns: 1fr; }

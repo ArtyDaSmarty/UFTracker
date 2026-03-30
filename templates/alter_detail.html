@@ -125,7 +125,12 @@
   <div class="gallery-grid top-gap">
     {% for image_url in view.gallery %}
     <div class="gallery-card">
-      <img src="{{ image_url }}" alt="Gallery image for {{ view.name }}">
+      {% if loop.first %}
+      <img src="{{ image_url }}" alt="Gallery image for {{ view.name }}" loading="lazy">
+      {% else %}
+      <button type="button" class="gallery-load-button" data-gallery-load>Spoiler: Click to load image</button>
+      <img data-src="{{ image_url }}" alt="Gallery image for {{ view.name }}" loading="lazy" hidden>
+      {% endif %}
       <a class="muted wrap-anywhere" href="{{ image_url }}" target="_blank" rel="noreferrer">{{ image_url }}</a>
       {% if can_create_records %}
       <form method="post" action="{{ url_for('update_gallery', kind='alter', entry_id=view.id) }}" data-async="swap">
