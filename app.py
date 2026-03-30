@@ -298,9 +298,10 @@ def media_file(kind, entry_id, filename):
         flash("You do not have access to that media.", "error")
         return redirect(url_for("dashboard"))
     media_name = media_storage_name(kind, entry_id, filename)
-    download_url = storage.get_download_url(media_name, expires_in=300)
-    if download_url:
-        return redirect(download_url)
+    if os.getenv("MEDIA_REDIRECTS", "").strip().lower() in {"1", "true", "yes", "on"}:
+        download_url = storage.get_download_url(media_name, expires_in=300)
+        if download_url:
+            return redirect(download_url)
     payload = storage.read_bytes(media_name)
     if payload is None:
         flash("Media file not found.", "error")
