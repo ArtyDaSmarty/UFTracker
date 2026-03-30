@@ -47,12 +47,18 @@ Set these environment variables to move all JSON-backed data into S3:
 
 ```powershell
 $env:STORAGE_BACKEND="s3"
+$env:S3_ENDPOINT="https://s3.example.com"
 $env:S3_BUCKET="your-bucket-name"
+$env:S3_REGION="auto"
+$env:S3_ACCESS_KEY="your-access-key"
+$env:S3_SECRET_KEY="your-secret-key"
 $env:S3_PREFIX="uftd"
+$env:S3_PATH_STYLE="true"
 ```
 
 AWS credentials can be supplied through standard AWS environment variables or IAM role configuration.
-You can also configure backend, bucket, and prefix from the in-app Storage page, which saves settings to `storage_settings.json`.
+You can also configure endpoint, bucket, region, access key, secret key, prefix, and path-style from the in-app Storage page, which saves settings to `storage_settings.json`.
+Access key and secret key are encrypted at rest using `SECRET_KEY` or `STORAGE_SETTINGS_KEY`, so production deployments should use a strong secret value.
 On startup, the app will also move legacy JSON files from the old app folder into the data directory if they have not already been moved.
 
 ## Data Files
