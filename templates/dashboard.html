@@ -51,9 +51,37 @@
     {% else %}
     <p class="muted">Prefix management requires creation permission.</p>
     {% endif %}
-    <p class="muted">Alter: {{ alter_prefixes|join(', ') }}</p>
-    <p class="muted">Affiliation: {{ affiliation_prefixes|join(', ') }}</p>
-    <p class="muted">Location: fixed LOC-</p>
+    <div class="stack compact top-gap">
+      <div class="prefix-block">
+        <strong>Alter Prefixes</strong>
+        {% for prefix in alter_prefixes %}
+        <div class="token-row">
+          <span class="token">{{ prefix }}</span>
+          {% if current_role == 'admin' %}
+          <form method="post" action="{{ url_for('remove_prefix', kind='alter') }}">
+            <input type="hidden" name="prefix" value="{{ prefix }}">
+            <button type="submit">Remove</button>
+          </form>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      <div class="prefix-block">
+        <strong>Affiliation Prefixes</strong>
+        {% for prefix in affiliation_prefixes %}
+        <div class="token-row">
+          <span class="token">{{ prefix }}</span>
+          {% if current_role == 'admin' %}
+          <form method="post" action="{{ url_for('remove_prefix', kind='affiliation') }}">
+            <input type="hidden" name="prefix" value="{{ prefix }}">
+            <button type="submit">Remove</button>
+          </form>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      <p class="muted">Location prefix is fixed to LOC-.</p>
+    </div>
   </div>
 
   <div class="card">
@@ -90,7 +118,7 @@
     {% else %}
     <p class="muted">Tag management requires creation permission.</p>
     {% endif %}
-    <p class="muted small">{{ context.tags|join(', ') }}</p>
+    <p class="muted small wrap-anywhere">{{ context.tags|join(', ') }}</p>
   </div>
 
   <div class="card">
@@ -105,13 +133,11 @@
       <input type="hidden" name="kind" value="location">
       <button>Search Locations</button>
     </form>
+    <form method="get" action="{{ url_for('search') }}" class="stack compact">
+      <label>Search affiliations<input name="q"></label>
+      <input type="hidden" name="kind" value="affiliation">
+      <button>Search Affiliations</button>
+    </form>
   </div>
-</section>
-
-<section class="grid cols-4">
-  <div class="card"><h3>Alters</h3>{% for entry_id, name in context.alters %}<a class="list-item" href="{{ url_for('alter_detail', alter_id=entry_id) }}">{{ name }} <span>{{ entry_id }}</span></a>{% else %}<p class="muted">No visible alters.</p>{% endfor %}</div>
-  <div class="card"><h3>Locations</h3>{% for entry_id, name in context.locations %}<a class="list-item" href="{{ url_for('location_detail', location_id=entry_id) }}">{{ name }} <span>{{ entry_id }}</span></a>{% else %}<p class="muted">No visible locations.</p>{% endfor %}</div>
-  <div class="card"><h3>Affiliations</h3>{% for entry_id, name in context.affiliations %}<a class="list-item" href="{{ url_for('affiliation_detail', affiliation_id=entry_id) }}">{{ name }} <span>{{ entry_id }}</span></a>{% else %}<p class="muted">No visible affiliations.</p>{% endfor %}</div>
-  <div class="card"><h3>Relations</h3>{% for relation in context.relations %}<div class="list-item static">{{ relation.source_id }} -> {{ relation.target_id }}<span>{{ relation.tag }}/{{ relation.reverse_tag }}</span></div>{% else %}<p class="muted">No visible relations.</p>{% endfor %}</div>
 </section>
 {% endblock %}
