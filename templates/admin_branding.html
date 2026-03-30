@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="grid cols-2">
+  <div class="card">
+    <h2>Branding</h2>
+    <p><strong>Current Name:</strong> {{ settings.site_name }}</p>
+    <p><strong>Favicon:</strong> {{ settings.favicon_name or 'Not configured' }}</p>
+    <p class="muted">The site name updates the sidebar title and browser tab title. Uploading a favicon replaces the current one.</p>
+  </div>
+
+  <div class="card">
+    <h3>Update Branding</h3>
+    <form method="post" enctype="multipart/form-data" class="stack">
+      <label>Site Name<input name="site_name" value="{{ settings.site_name }}"></label>
+      <label>Favicon Upload<input name="favicon_file" type="file" accept=".ico,.png,.jpg,.jpeg,.gif,.webp,.svg"></label>
+      <button class="primary">Save Branding</button>
+    </form>
+  </div>
+</section>
+{% endblock %}
