@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 
-from flask import Flask, flash, redirect, render_template, request, send_from_directory, session, url_for
+from flask import Flask, Response, flash, redirect, render_template, request, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 
@@ -38,11 +38,17 @@ from tracker_core import (
     get_affiliation_prefixes,
     get_alter_prefixes,
     get_storage,
+    import_gallery_media_from_url,
+    is_managed_media_url,
     load_data,
     load_storage_settings,
     load_users,
     LocalStorage,
+    media_name_from_url,
+    media_storage_name,
+    managed_media_url,
     migrate_storage_data,
+    migrate_gallery_media,
     migrate_legacy_local_files,
     remove_affiliation_membership,
     remove_gallery_item,
@@ -64,27 +70,21 @@ from tracker_core import (
 
 APP_DIR = Path(__file__).resolve().parent
 DATA_DIR = Path(os.getenv("DATA_DIR", str(APP_DIR / "data"))).resolve()
-UPLOADS_DIR = DATA_DIR / "uploads"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
-UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 migrate_legacy_local_files(APP_DIR, DATA_DIR)
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "change-me-for-production")
 storage = get_storage(DATA_DIR)
 ensure_storage_files(storage)
+migrate_gallery_media(storage, DATA_DIR)
 
 
 def refresh_storage():
     global storage
     storage = get_storage(DATA_DIR)
     ensure_storage_files(storage)
+    migrate_gallery_media(storage, DATA_DIR)
     return storage
-
-
-def gallery_upload_dir(kind, entry_id):
-    target = UPLOADS_DIR / kind / entry_id
-    target.mkdir(parents=True, exist_ok=True)
-    return target
 
 
 def save_gallery_upload(kind, entry_id, file_storage):
@@ -94,25 +94,15 @@ def save_gallery_upload(kind, entry_id, file_storage):
     if suffix not in {".jpg", ".jpeg", ".png", ".gif", ".webp"}:
         raise ValueError("Uploads must be JPG, PNG, GIF, or WEBP.")
     filename = f"{os.urandom(12).hex()}{suffix}"
-    target = gallery_upload_dir(kind, entry_id) / filename
-    file_storage.save(target)
-    return url_for("media_file", kind=kind, entry_id=entry_id, filename=filename)
+    storage.write_bytes(media_storage_name(kind, entry_id, filename), file_storage.read())
+    return managed_media_url(kind, entry_id, filename)
 
 
 def delete_gallery_upload(image_url):
-    media_prefix = "/media/"
-    if not image_url.startswith(media_prefix):
+    media_name = media_name_from_url(image_url)
+    if not media_name:
         return
-    parts = image_url.removeprefix(media_prefix).split("/", 2)
-    if len(parts) != 3:
-        return
-    kind, entry_id, filename = parts
-    target = gallery_upload_dir(kind, entry_id) / filename
-    try:
-        if target.exists():
-            target.unlink()
-    except OSError:
-        pass
+    storage.delete_bytes(media_name)
 
 
 def current_user():
@@ -208,7 +198,12 @@ def media_file(kind, entry_id, filename):
     if not entry_is_accessible(load_data(storage), kind, entry_id, current_user_level()):
         flash("You do not have access to that media.", "error")
         return redirect(url_for("dashboard"))
-    return send_from_directory(gallery_upload_dir(kind, entry_id), filename)
+    media_name = media_storage_name(kind, entry_id, filename)
+    payload = storage.read_bytes(media_name)
+    if payload is None:
+        flash("Media file not found.", "error")
+        return redirect(url_for("dashboard"))
+    return Response(payload, mimetype=Path(filename).suffix and ({".jpg":"image/jpeg",".jpeg":"image/jpeg",".png":"image/png",".gif":"image/gif",".webp":"image/webp"}.get(Path(filename).suffix.lower(), "application/octet-stream")) or "application/octet-stream")
 
 
 @app.route("/admin")
@@ -541,6 +536,15 @@ def update_gallery(kind, entry_id):
                 image_url = uploaded_image_url
             except ValueError as error:
                 flash(str(error), "error")
+                target = "alter_detail" if kind == "alter" else "location_detail"
+                arg_name = "alter_id" if kind == "alter" else "location_id"
+                return redirect(url_for(target, **{arg_name: entry_id}))
+        if image_url and not is_managed_media_url(image_url):
+            success, managed_image_url = import_gallery_media_from_url(storage, kind, entry_id, image_url)
+            if success:
+                image_url = managed_image_url
+            else:
+                flash(managed_image_url, "error")
                 target = "alter_detail" if kind == "alter" else "location_detail"
                 arg_name = "alter_id" if kind == "alter" else "location_id"
                 return redirect(url_for(target, **{arg_name: entry_id}))
