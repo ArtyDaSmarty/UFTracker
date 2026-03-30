@@ -1,10 +1,29 @@
 {% extends "base.html" %}
 {% block content %}
-<section class="card">
-  <h2>Storage</h2>
-  <p><strong>Backend:</strong> {{ backend }}</p>
-  <p><strong>S3 Bucket:</strong> {{ bucket or 'Not configured' }}</p>
-  <p><strong>S3 Prefix:</strong> {{ prefix or 'Not configured' }}</p>
-  <p class="muted">Set <code>STORAGE_BACKEND=s3</code>, <code>S3_BUCKET</code>, and optional <code>S3_PREFIX</code> to move all JSON-backed data into S3.</p>
+<section class="grid cols-2">
+  <div class="card">
+    <h2>Storage</h2>
+    <p><strong>Backend:</strong> {{ backend }}</p>
+    <p><strong>S3 Bucket:</strong> {{ bucket or 'Not configured' }}</p>
+    <p><strong>S3 Prefix:</strong> {{ prefix or 'Not configured' }}</p>
+    <p class="muted">Settings are saved in <code>{{ config_file }}</code>. Environment variables still override them if present.</p>
+  </div>
+
+  <div class="card">
+    <h3>Configure Storage</h3>
+    <form method="post" class="stack">
+      <label>Backend
+        <select name="backend">
+          <option value="local" {% if backend == 'local' %}selected{% endif %}>Local</option>
+          <option value="s3" {% if backend == 's3' %}selected{% endif %}>S3</option>
+        </select>
+      </label>
+      <label>S3 Bucket<input name="s3_bucket" value="{{ bucket }}"></label>
+      <label>S3 Prefix<input name="s3_prefix" value="{{ prefix }}"></label>
+      <button class="primary" name="action" value="save">Save Storage Settings</button>
+      <button name="action" value="migrate">Save And Migrate Data</button>
+    </form>
+    <p class="muted">Use migrate after switching to S3 so your tracker, hashes, and users are copied into the configured backend.</p>
+  </div>
 </section>
 {% endblock %}

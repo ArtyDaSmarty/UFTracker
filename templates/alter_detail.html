@@ -111,4 +111,30 @@
     </div>
   </div>
 </section>
+
+<section class="card top-gap">
+  <h3>Gallery</h3>
+  {% if can_create_records %}
+  <form method="post" action="{{ url_for('update_gallery', kind='alter', entry_id=view.id) }}" class="stack compact">
+    <label>Image URL<input name="image_url" placeholder="https://example.com/image.png"></label>
+    <button class="primary" name="action" value="add">Add To Gallery</button>
+  </form>
+  {% endif %}
+  <div class="gallery-grid top-gap">
+    {% for image_url in view.gallery %}
+    <div class="gallery-card">
+      <img src="{{ image_url }}" alt="Gallery image for {{ view.name }}">
+      <a class="muted wrap-anywhere" href="{{ image_url }}" target="_blank" rel="noreferrer">{{ image_url }}</a>
+      {% if can_create_records %}
+      <form method="post" action="{{ url_for('update_gallery', kind='alter', entry_id=view.id) }}">
+        <input type="hidden" name="image_url" value="{{ image_url }}">
+        <button name="action" value="remove">Remove</button>
+      </form>
+      {% endif %}
+    </div>
+    {% else %}
+    <p class="muted">No gallery images yet.</p>
+    {% endfor %}
+  </div>
+</section>
 {% endblock %}

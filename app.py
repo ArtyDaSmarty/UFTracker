@@ -15,8 +15,10 @@ from tracker_core import (
     ORGAN_OPTIONS,
     RELATIONSHIP_STYLE_OPTIONS,
     STATUS_OPTIONS,
+    STORAGE_SETTINGS_FILE,
     USER_FILE,
     USER_LEVEL_OPTIONS,
+    add_gallery_item,
     bind_location,
     build_alter_view,
     build_affiliation_view,
@@ -27,6 +29,8 @@ from tracker_core import (
     create_alter_prefix,
     create_relation_tag,
     create_special_relation_tag,
+    delete_affiliation_prefix,
+    delete_alter_prefix,
     entry_is_accessible,
     ensure_storage_files,
     generate_unique_hash,
@@ -34,12 +38,17 @@ from tracker_core import (
     get_alter_prefixes,
     get_storage,
     load_data,
+    load_storage_settings,
     load_users,
+    LocalStorage,
+    migrate_storage_data,
     remove_affiliation_membership,
+    remove_gallery_item,
     remove_occupation_entry,
     remove_relation,
     rename_entry,
     save_alter_profile,
+    save_storage_settings,
     save_uploaded_json,
     save_users,
     search_entries,
@@ -56,6 +65,13 @@ app = Flask(__name__)
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "change-me-for-production")
 storage = get_storage(APP_DIR)
 ensure_storage_files(storage)
+
+
+def refresh_storage():
+    global storage
+    storage = get_storage(APP_DIR)
+    ensure_storage_files(storage)
+    return storage
 
 
 def current_user():
@@ -117,6 +133,7 @@ def tracker_write_required(view):
 @app.context_processor
 def inject_globals():
     user = current_user()
+    storage_settings = load_storage_settings(APP_DIR)
     return {
         "current_user": user,
         "current_role": user["role"] if user else None,
@@ -131,6 +148,7 @@ def inject_globals():
         "organ_options": ORGAN_OPTIONS,
         "relationship_style_options": RELATIONSHIP_STYLE_OPTIONS,
         "legacy_value": LEGACY_VALUE,
+        "storage_settings": storage_settings,
     }
 
 
@@ -251,6 +269,19 @@ def add_prefix(kind):
         success, message = create_alter_prefix(storage, request.form.get("prefix", ""))
     else:
         success, message = create_affiliation_prefix(storage, request.form.get("prefix", ""))
+    flash(message, "success" if success else "error")
+    return redirect(url_for("dashboard"))
+
+
+@app.route("/prefix/<kind>/delete", methods=["POST"])
+@login_required
+@roles_required("admin")
+def remove_prefix(kind):
+    prefix = request.form.get("prefix", "")
+    if kind == "alter":
+        success, message = delete_alter_prefix(storage, prefix)
+    else:
+        success, message = delete_affiliation_prefix(storage, prefix)
     flash(message, "success" if success else "error")
     return redirect(url_for("dashboard"))
 
@@ -401,6 +432,28 @@ def location_detail(location_id):
     return render_template("location_detail.html", view=view)
 
 
+@app.route("/gallery/<kind>/<entry_id>", methods=["POST"])
+@login_required
+@tracker_write_required
+def update_gallery(kind, entry_id):
+    if kind not in {"alter", "location"}:
+        flash("Unsupported gallery type.", "error")
+        return redirect(url_for("dashboard"))
+    if not entry_is_accessible(load_data(storage), kind, entry_id, current_user_level()):
+        flash("You do not have access to that entry.", "error")
+        return redirect(url_for("dashboard"))
+    image_url = request.form.get("image_url", "").strip()
+    action = request.form.get("action", "add")
+    if action == "remove":
+        success, message = remove_gallery_item(storage, kind, entry_id, image_url)
+    else:
+        success, message = add_gallery_item(storage, kind, entry_id, image_url)
+    flash(message, "success" if success else "error")
+    target = "alter_detail" if kind == "alter" else "location_detail"
+    arg_name = "alter_id" if kind == "alter" else "location_id"
+    return redirect(url_for(target, **{arg_name: entry_id}))
+
+
 @app.route("/affiliation/<affiliation_id>")
 @login_required
 def affiliation_detail(affiliation_id):
@@ -493,15 +546,51 @@ def admin_users():
     return render_template("admin_users.html", users=users_data["users"])
 
 
-@app.route("/admin/storage")
+@app.route("/admin/storage", methods=["GET", "POST"])
 @login_required
 @roles_required("admin")
 def admin_storage():
+    if request.method == "POST":
+        action = request.form.get("action", "save")
+        settings = {
+            "backend": request.form.get("backend", "local").strip().lower(),
+            "s3_bucket": request.form.get("s3_bucket", "").strip(),
+            "s3_prefix": request.form.get("s3_prefix", "").strip(),
+        }
+        if settings["backend"] not in {"local", "s3"}:
+            flash("Storage backend must be local or s3.", "error")
+            return redirect(url_for("admin_storage"))
+        if settings["backend"] == "s3" and not settings["s3_bucket"]:
+            flash("S3 bucket is required when using S3 storage.", "error")
+            return redirect(url_for("admin_storage"))
+        if action == "save":
+            save_storage_settings(APP_DIR, settings)
+            try:
+                refresh_storage()
+            except RuntimeError as error:
+                flash(str(error), "error")
+                return redirect(url_for("admin_storage"))
+            flash("Storage settings saved.", "success")
+            return redirect(url_for("admin_storage"))
+        if action == "migrate":
+            save_storage_settings(APP_DIR, settings)
+            source_storage = LocalStorage(APP_DIR)
+            try:
+                destination_storage = get_storage(APP_DIR)
+                migrate_storage_data(source_storage, destination_storage)
+                refresh_storage()
+            except RuntimeError as error:
+                flash(str(error), "error")
+                return redirect(url_for("admin_storage"))
+            flash("Data migrated to the configured storage backend.", "success")
+            return redirect(url_for("admin_storage"))
+    settings = load_storage_settings(APP_DIR)
     return render_template(
         "admin_storage.html",
-        backend=os.getenv("STORAGE_BACKEND", "local").lower(),
-        bucket=os.getenv("S3_BUCKET", ""),
-        prefix=os.getenv("S3_PREFIX", ""),
+        backend=settings.get("backend", "local"),
+        bucket=settings.get("s3_bucket", ""),
+        prefix=settings.get("s3_prefix", ""),
+        config_file=STORAGE_SETTINGS_FILE,
     )
 
 

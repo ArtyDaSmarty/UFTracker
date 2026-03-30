@@ -16,6 +16,7 @@ DATA_FILE = "relationship_data.json"
 HASH_FILE = "saved_hashes.json"
 USER_FILE = "users.json"
 AFFILIATION_PREFIX_FILE = "affiliation_prefixes.json"
+STORAGE_SETTINGS_FILE = "storage_settings.json"
 DEFAULT_RELATION_TAGS = ["NONE", "Sibling", "Friend", "Partner", "Spouse"]
 DEFAULT_SPECIAL_RELATION_TAGS = {"Parent": "Child", "Child": "Parent"}
 DEFAULT_ALTER_PREFIXES = ["UFA-"]
@@ -83,10 +84,11 @@ class S3Storage:
 def get_storage(root):
     import os
 
-    backend = os.getenv("STORAGE_BACKEND", "local").lower()
+    settings = load_storage_settings(root)
+    backend = os.getenv("STORAGE_BACKEND", settings.get("backend", "local")).lower()
     if backend == "s3":
-        bucket = os.getenv("S3_BUCKET", "").strip()
-        prefix = os.getenv("S3_PREFIX", "")
+        bucket = os.getenv("S3_BUCKET", settings.get("s3_bucket", "")).strip()
+        prefix = os.getenv("S3_PREFIX", settings.get("s3_prefix", ""))
         if not bucket:
             raise RuntimeError("S3_BUCKET is required when STORAGE_BACKEND=s3.")
         return S3Storage(bucket, prefix)
@@ -116,6 +118,7 @@ def tracker_default():
         "alter_prefixes": list(DEFAULT_ALTER_PREFIXES),
         "affiliation_prefixes": list(DEFAULT_AFFILIATION_PREFIXES),
         "alter_profiles": {},
+        "location_galleries": {},
     }
 
 
@@ -125,6 +128,36 @@ def users_default():
 
 def hashes_default():
     return {"hashes": []}
+
+
+def storage_settings_default():
+    return {
+        "backend": "local",
+        "s3_bucket": "",
+        "s3_prefix": "",
+    }
+
+
+def load_storage_settings(root):
+    path = Path(root) / STORAGE_SETTINGS_FILE
+    if not path.exists():
+        return storage_settings_default()
+    try:
+        with path.open("r", encoding="utf-8") as file:
+            data = json.load(file)
+    except (json.JSONDecodeError, OSError):
+        return storage_settings_default()
+    settings = storage_settings_default()
+    settings.update({key: data.get(key, value) for key, value in settings.items()})
+    return settings
+
+
+def save_storage_settings(root, settings):
+    path = Path(root) / STORAGE_SETTINGS_FILE
+    payload = storage_settings_default()
+    payload.update({key: settings.get(key, value) for key, value in payload.items()})
+    with path.open("w", encoding="utf-8") as file:
+        json.dump(payload, file, indent=2)
 
 
 def ensure_storage_files(storage):
@@ -148,6 +181,7 @@ def legacy_profile():
         "height": LEGACY_VALUE,
         "occupations": [],
         "affiliations": [],
+        "gallery": [],
     }
 
 
@@ -265,6 +299,7 @@ def load_data(storage):
     data.setdefault("alter_prefixes", list(DEFAULT_ALTER_PREFIXES))
     data.setdefault("affiliation_prefixes", list(DEFAULT_AFFILIATION_PREFIXES))
     data.setdefault("alter_profiles", {})
+    data.setdefault("location_galleries", {})
     data["entry_levels"].setdefault("alters", {})
     data["entry_levels"].setdefault("locations", {})
     data["entry_levels"].setdefault("affiliations", {})
@@ -315,6 +350,7 @@ def load_data(storage):
                 changed = True
         profile["occupations"] = normalize_status_entries(profile.get("occupations"))
         profile["affiliations"] = normalize_status_entries(profile.get("affiliations"))
+        profile["gallery"] = [item for item in profile.get("gallery", []) if str(item).strip()]
         if update_profile_birthday_age(profile):
             changed = True
 
@@ -322,6 +358,11 @@ def load_data(storage):
         if location_id not in data["entry_levels"]["locations"]:
             data["entry_levels"]["locations"][location_id] = 3
             changed = True
+        if location_id not in data["location_galleries"]:
+            data["location_galleries"][location_id] = []
+            changed = True
+        else:
+            data["location_galleries"][location_id] = [item for item in data["location_galleries"].get(location_id, []) if str(item).strip()]
 
     for affiliation_id in data["affiliations"]:
         if affiliation_id not in data["entry_levels"]["affiliations"]:
@@ -490,6 +531,18 @@ def create_alter_prefix(storage, prefix):
     return True, f'Created alter prefix "{prefix}".'
 
 
+def delete_alter_prefix(storage, prefix):
+    data = load_data(storage)
+    prefix = prefix.strip()
+    if prefix not in data["alter_prefixes"]:
+        return False, "That alter prefix does not exist."
+    if len(data["alter_prefixes"]) == 1:
+        return False, "At least one alter prefix must remain."
+    data["alter_prefixes"] = [item for item in data["alter_prefixes"] if item != prefix]
+    save_data(storage, data)
+    return True, f'Removed alter prefix "{prefix}".'
+
+
 def create_affiliation_prefix(storage, prefix):
     data = load_data(storage)
     prefix = prefix.strip()
@@ -500,6 +553,18 @@ def create_affiliation_prefix(storage, prefix):
     data["affiliation_prefixes"] = unique_items(data["affiliation_prefixes"] + [prefix])
     save_data(storage, data)
     return True, f'Created affiliation prefix "{prefix}".'
+
+
+def delete_affiliation_prefix(storage, prefix):
+    data = load_data(storage)
+    prefix = prefix.strip()
+    if prefix not in data["affiliation_prefixes"]:
+        return False, "That affiliation prefix does not exist."
+    if len(data["affiliation_prefixes"]) == 1:
+        return False, "At least one affiliation prefix must remain."
+    data["affiliation_prefixes"] = [item for item in data["affiliation_prefixes"] if item != prefix]
+    save_data(storage, data)
+    return True, f'Removed affiliation prefix "{prefix}".'
 
 
 def get_available_relation_tags(data):
@@ -673,6 +738,43 @@ def remove_relation(storage, first_id, relation_name, second_id):
     return True, "Removed relation."
 
 
+def add_gallery_item(storage, kind, entry_id, image_url):
+    data = load_data(storage)
+    image_url = image_url.strip()
+    if not image_url:
+        return False, "An image URL is required."
+    if kind == "alter":
+        if entry_id not in data["alters"]:
+            return False, "Unknown alter."
+        gallery = data["alter_profiles"].setdefault(entry_id, legacy_profile()).setdefault("gallery", [])
+    else:
+        if entry_id not in data["locations"]:
+            return False, "Unknown location."
+        gallery = data["location_galleries"].setdefault(entry_id, [])
+    if image_url in gallery:
+        return False, "That image is already in the gallery."
+    gallery.append(image_url)
+    save_data(storage, data)
+    return True, "Added gallery image."
+
+
+def remove_gallery_item(storage, kind, entry_id, image_url):
+    data = load_data(storage)
+    if kind == "alter":
+        if entry_id not in data["alters"]:
+            return False, "Unknown alter."
+        gallery = data["alter_profiles"].setdefault(entry_id, legacy_profile()).setdefault("gallery", [])
+    else:
+        if entry_id not in data["locations"]:
+            return False, "Unknown location."
+        gallery = data["location_galleries"].setdefault(entry_id, [])
+    if image_url not in gallery:
+        return False, "That image was not found in the gallery."
+    gallery.remove(image_url)
+    save_data(storage, data)
+    return True, "Removed gallery image."
+
+
 def search_entries(data, kind, query, user_level=4):
     query = query.strip().casefold()
     matches = []
@@ -805,6 +907,7 @@ def build_alter_view(data, alter_id, user_level=4):
         "relation_tags": get_available_relation_tags(data),
         "affiliations": visible_affiliations,
         "bulk_rows": bulk_rows,
+        "gallery": list(profile.get("gallery", [])),
     }
 
 
@@ -821,6 +924,7 @@ def build_location_view(data, location_id, user_level=4):
         "name": data["locations"][location_id],
         "level": get_entry_level(data, "locations", location_id),
         "bound_alters": sorted(bound, key=lambda item: item["name"].casefold()),
+        "gallery": list(data["location_galleries"].get(location_id, [])),
     }
 
 
@@ -855,3 +959,11 @@ def save_uploaded_json(storage, target_name, raw_bytes):
     if target_name == DATA_FILE:
         load_data(storage)
     return True, f"Imported {target_name}."
+
+
+def migrate_storage_data(source_storage, destination_storage):
+    destination_storage.write_json(DATA_FILE, source_storage.read_json(DATA_FILE, tracker_default()))
+    destination_storage.write_json(HASH_FILE, source_storage.read_json(HASH_FILE, hashes_default()))
+    destination_storage.write_json(USER_FILE, source_storage.read_json(USER_FILE, users_default()))
+    ensure_storage_files(destination_storage)
+    return True, "Migrated tracker, hash, and user data."

@@ -47,8 +47,8 @@ button { cursor: pointer; }
 button.primary, .button-link { background: var(--accent); color: white; border-color: var(--accent); }
 button.primary:hover, .button-link:hover { background: var(--accent-2); }
 .button-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.list-item { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); }
-.list-item span { color: var(--muted); font-size: 0.9rem; }
+.list-item { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); min-width: 0; overflow-wrap: anywhere; }
+.list-item span { color: var(--muted); font-size: 0.9rem; overflow-wrap: anywhere; text-align: right; }
 .list-item.static { justify-content: flex-start; }
 .flash-wrap { display: grid; gap: 10px; margin-bottom: 16px; }
 .flash { padding: 12px 14px; border-radius: 14px; }
@@ -60,6 +60,15 @@ button.primary:hover, .button-link:hover { background: var(--accent-2); }
 .bulk-row { display: grid; grid-template-columns: 1fr 180px; gap: 12px; align-items: center; }
 .bordered { border: 1px solid var(--line); border-radius: 16px; padding: 14px; margin-bottom: 12px; }
 .theme-toggle { display: flex; gap: 10px; align-items: center; margin-top: 14px; }
+.wrap-anywhere { overflow-wrap: anywhere; word-break: break-word; }
+.token-row { display: flex; justify-content: space-between; gap: 12px; align-items: center; flex-wrap: wrap; }
+.token-row form, .gallery-card form { width: auto; }
+.token-row button, .gallery-card button { width: auto; }
+.token { display: inline-flex; padding: 6px 10px; border-radius: 999px; border: 1px solid var(--line); background: color-mix(in srgb, var(--accent) 10%, var(--card)); overflow-wrap: anywhere; }
+.prefix-block { display: grid; gap: 8px; }
+.gallery-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.gallery-card { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 16px; background: color-mix(in srgb, var(--card) 82%, var(--sidebar)); }
+.gallery-card img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 12px; border: 1px solid var(--line); background: var(--sidebar); }
 @media (max-width: 1200px) {
   .cols-5 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .cols-4, .cols-2 { grid-template-columns: 1fr; }
