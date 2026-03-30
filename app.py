@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 
-from flask import Flask, Response, flash, g, has_request_context, redirect, render_template, request, session, url_for
+from flask import Flask, Response, flash, g, has_request_context, jsonify, redirect, render_template, request, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 
@@ -134,6 +134,10 @@ def clear_request_caches():
         for attr in ("users_data_cache", "tracker_data_cache", "storage_settings_cache", "current_user_cache"):
             if hasattr(g, attr):
                 delattr(g, attr)
+
+
+def is_async_request():
+    return request.headers.get("X-Requested-With") == "XMLHttpRequest"
 
 
 def current_user():
@@ -337,18 +341,27 @@ def generate_id(kind):
     prefix = request.form.get("prefix", "")
     if kind == "alter":
         if prefix and prefix not in get_alter_prefixes(data):
+            if is_async_request():
+                return jsonify({"ok": False, "message": "Unknown alter prefix.", "category": "error"}), 400
             flash("Unknown alter prefix.", "error")
             return redirect(url_for("dashboard"))
     elif kind == "location":
         prefix = LOCATION_PREFIX if prefix != "" else ""
     elif kind == "affiliation":
         if prefix and prefix not in get_affiliation_prefixes(data):
+            if is_async_request():
+                return jsonify({"ok": False, "message": "Unknown affiliation prefix.", "category": "error"}), 400
             flash("Unknown affiliation prefix.", "error")
             return redirect(url_for("dashboard"))
     else:
+        if is_async_request():
+            return jsonify({"ok": False, "message": "Unknown ID type.", "category": "error"}), 400
         flash("Unknown ID type.", "error")
         return redirect(url_for("dashboard"))
-    flash(f"Generated ID: {generate_unique_hash(storage, prefix)}", "success")
+    generated_id = generate_unique_hash(storage, prefix)
+    if is_async_request():
+        return jsonify({"ok": True, "message": f"Generated ID: {generated_id}", "category": "success", "generated_id": generated_id})
+    flash(f"Generated ID: {generated_id}", "success")
     return redirect(url_for("dashboard"))
 
 
