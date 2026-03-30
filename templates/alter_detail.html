@@ -32,9 +32,16 @@
       <label>Sexual/Romantic Attraction<input name="attraction" value="{{ '' if view.profile.sexual_romantic_attraction == legacy_value else view.profile.sexual_romantic_attraction }}"></label>
       <label>Relationship Style<select name="relationship_style"><option value=""></option>{% for item in relationship_style_options %}<option value="{{ item }}" {% if view.profile.relationship_style == item %}selected{% endif %}>{{ item }}</option>{% endfor %}</select></label>
       <label>Height<input name="height" value="{{ '' if view.profile.height == legacy_value else view.profile.height }}"></label>
-      <label>Location ID<input name="location_id" value="{{ view.location_id }}"></label>
+      <label>Location
+        <input name="location_id" value="{{ view.location_id }}" list="location-options" placeholder="Search by location name or ID">
+      </label>
       <button class="primary">Save Profile</button>
     </form>
+    <datalist id="location-options">
+      {% for entry_id, name in view.locations %}
+      <option value="{{ entry_id }}" label="{{ name }} ({{ entry_id }})"></option>
+      {% endfor %}
+    </datalist>
     <form method="post" action="{{ url_for('update_record_level', kind='alter', entry_id=view.id) }}" class="stack compact top-gap" data-async="swap">
       <label>Access level
         <select name="level">{% for level in entry_level_options %}{% if current_level == 4 or level <= current_level %}<option value="{{ level }}" {% if view.level == level %}selected{% endif %}>Level {{ level }}</option>{% endif %}{% endfor %}</select>
@@ -55,10 +62,7 @@
     {% if can_create_records %}
     <form method="post" action="{{ url_for('update_alter_affiliations', alter_id=view.id) }}" class="stack compact" data-async="swap">
       <label>Affiliation
-        <select name="affiliation_id">
-          <option value=""></option>
-          {% for entry_id, name in view.affiliations %}<option value="{{ entry_id }}">{{ name }} ({{ entry_id }})</option>{% endfor %}
-        </select>
+        <input name="affiliation_id" list="affiliation-options" placeholder="Search by affiliation name or ID">
       </label>
       <label>Status<select name="status">{% for status in status_options %}<option value="{{ status }}">{{ status }}</option>{% endfor %}</select></label>
       <div class="button-row">
@@ -66,6 +70,11 @@
         <button name="action" value="remove">Remove</button>
       </div>
     </form>
+    <datalist id="affiliation-options">
+      {% for entry_id, name in view.affiliations %}
+      <option value="{{ entry_id }}" label="{{ name }} ({{ entry_id }})"></option>
+      {% endfor %}
+    </datalist>
     <form method="post" action="{{ url_for('update_alter_occupations', alter_id=view.id) }}" class="stack compact" data-async="swap">
       <label>Occupation / Role<input name="occupation"></label>
       <label>Status<select name="status">{% for status in status_options %}<option value="{{ status }}">{{ status }}</option>{% endfor %}</select></label>
@@ -79,19 +88,29 @@
     <h3 class="top-gap">Relations</h3>
     {% if can_create_records %}
     <form method="post" action="{{ url_for('update_relation', alter_id=view.id) }}" class="stack compact" data-async="swap">
-      <label>Other alter ID<input name="other_id"></label>
+      <label>Other Alter
+        <input name="other_id" list="alter-options" placeholder="Search by alter name or ID">
+      </label>
       <label>Relation tag<select name="tag">{% for tag in view.relation_tags %}<option value="{{ tag }}">{{ tag }}</option>{% endfor %}</select></label>
       <div class="button-row">
         <button class="primary" name="action" value="set">Set Tag</button>
         <button name="action" value="remove">Remove</button>
       </div>
     </form>
+    <datalist id="alter-options">
+      {% for row in view.bulk_rows %}
+      <option value="{{ row.id }}" label="{{ row.name }} ({{ row.id }})"></option>
+      {% endfor %}
+    </datalist>
     <details class="top-gap">
       <summary>Bulk relation tags</summary>
+      <label class="top-gap">Filter Alters
+        <input type="search" placeholder="Search by alter name or ID" data-filter-target=".bulk-row" data-filter-value=".bulk-row-label">
+      </label>
       <form method="post" action="{{ url_for('bulk_relations', alter_id=view.id) }}" class="stack compact" data-async="swap">
         {% for row in view.bulk_rows %}
         <div class="bulk-row">
-          <label><input type="checkbox" name="selected_ids" value="{{ row.id }}"> {{ row.name }} ({{ row.id }})</label>
+          <label class="bulk-row-label"><input type="checkbox" name="selected_ids" value="{{ row.id }}"> <span>{{ row.name }} ({{ row.id }})</span></label>
           <select name="tag_{{ row.id }}">{% for tag in view.relation_tags %}<option value="{{ tag }}" {% if row.current_tag == tag %}selected{% endif %}>{{ tag }}</option>{% endfor %}</select>
         </div>
         {% endfor %}
