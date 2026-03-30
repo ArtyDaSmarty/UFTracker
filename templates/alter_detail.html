@@ -58,7 +58,11 @@
         <span>
           {% if view.profile_affiliations %}
             {% for affiliation in view.profile_affiliations %}
-            <a href="{{ url_for('affiliation_detail', affiliation_id=affiliation.id) }}">{{ affiliation.name }}</a>{% if affiliation.status %} ({{ affiliation.status }}){% endif %}{% if not loop.last %}, {% endif %}
+            {% if affiliation.is_linkable %}
+            <a href="{{ url_for('affiliation_detail', affiliation_id=affiliation.id) }}">{{ affiliation.name }}</a>
+            {% else %}
+            {{ affiliation.name }}
+            {% endif %}{% if affiliation.status %} ({{ affiliation.status }}){% endif %}{% if not loop.last %}, {% endif %}
             {% endfor %}
           {% else %}
             {{ legacy_value }}
@@ -83,6 +87,7 @@
       </div>
     </form>
     <datalist id="affiliation-options">
+      <option value="" label="Independent"></option>
       {% for entry_id, name in view.affiliations %}
       <option value="{{ entry_id }}" label="{{ name }} ({{ entry_id }})"></option>
       {% endfor %}
