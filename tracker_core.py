@@ -552,7 +552,7 @@ def load_data(storage):
 
     if changed:
         save_data(storage, data)
-    sync_saved_hashes_with_tracker(storage, data)
+        sync_saved_hashes_with_tracker(storage, data)
     return data
 
 
