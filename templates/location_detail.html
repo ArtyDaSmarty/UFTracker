@@ -2,17 +2,11 @@
 {% block content %}
 <section class="card">
   <h2>{{ view.name }}</h2>
-  <p class="muted">{{ view.id }} | Level {{ view.level }}</p>
+  <p class="muted">{{ view.id }}</p>
   {% if can_create_records %}
   <form method="post" action="{{ url_for('rename_record', kind='location', entry_id=view.id) }}" class="stack compact" data-async="swap">
     <label>Location name<input name="name" value="{{ view.name }}"></label>
     <button>Rename Location</button>
-  </form>
-  <form method="post" action="{{ url_for('update_record_level', kind='location', entry_id=view.id) }}" class="stack compact top-gap" data-async="swap">
-    <label>Access level
-      <select name="level">{% for level in entry_level_options %}{% if current_level == 4 or level <= current_level %}<option value="{{ level }}" {% if view.level == level %}selected{% endif %}>Level {{ level }}</option>{% endif %}{% endfor %}</select>
-    </label>
-    <button>Update Access Level</button>
   </form>
   {% endif %}
   <h3 class="top-gap">Bound Alters</h3>
@@ -25,6 +19,13 @@
 
 <section class="card top-gap">
   <h3>Gallery</h3>
+  {% if can_create_records %}
+  <form method="post" action="{{ url_for('update_gallery_lock', kind='location', entry_id=view.id) }}" class="stack compact" data-async="swap">
+    <label><input type="checkbox" name="gallery_locked" {% if view.gallery_locked %}checked{% endif %}> Lock this gallery</label>
+    <button>Save Gallery Lock</button>
+  </form>
+  {% endif %}
+  {% if can_view_gallery %}
   {% if can_create_records %}
   <form method="post" action="{{ url_for('update_gallery', kind='location', entry_id=view.id) }}" class="stack compact" enctype="multipart/form-data" data-async="swap">
     <label>Image URL<input name="image_url" placeholder="https://example.com/image.png"></label>
@@ -53,5 +54,8 @@
     <p class="muted">No gallery images yet.</p>
     {% endfor %}
   </div>
+  {% else %}
+  <p class="muted">{% if view.gallery_locked %}This gallery is locked. You do not have permission to view locked galleries.{% else %}You cannot view galleries because your account does not have permission.{% endif %}</p>
+  {% endif %}
 </section>
 {% endblock %}
