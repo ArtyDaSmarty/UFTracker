@@ -25,7 +25,7 @@
           {% for month in month_options %}<option value="{{ month }}" {% if view.profile.birthday_month == loop.index %}selected{% endif %}>{{ month }}</option>{% endfor %}
         </select>
       </label>
-      <label>Birthday year<input name="birthday_year" value="{{ view.profile.birthday_year or '' }}"></label>
+      <label>Birthday day<input name="birthday_day" value="{{ view.profile.birthday_day or '' }}"></label>
       <label>Gender<select name="gender"><option value=""></option>{% for item in gender_options %}<option value="{{ item }}" {% if view.profile.gender == item %}selected{% endif %}>{{ item }}</option>{% endfor %}</select></label>
       <label>Reproductive Organ<select name="reproductive_organ"><option value=""></option>{% for item in organ_options %}<option value="{{ item }}" {% if view.profile.reproductive_organ == item %}selected{% endif %}>{{ item }}</option>{% endfor %}</select></label>
       <label>Sexual/Romantic Attraction<input name="attraction" value="{{ '' if view.profile.sexual_romantic_attraction == legacy_value else view.profile.sexual_romantic_attraction }}"></label>
@@ -115,8 +115,9 @@
 <section class="card top-gap">
   <h3>Gallery</h3>
   {% if can_create_records %}
-  <form method="post" action="{{ url_for('update_gallery', kind='alter', entry_id=view.id) }}" class="stack compact">
+  <form method="post" action="{{ url_for('update_gallery', kind='alter', entry_id=view.id) }}" class="stack compact" enctype="multipart/form-data">
     <label>Image URL<input name="image_url" placeholder="https://example.com/image.png"></label>
+    <label>Upload Image<input name="image_file" type="file" accept=".jpg,.jpeg,.png,.gif,.webp"></label>
     <button class="primary" name="action" value="add">Add To Gallery</button>
   </form>
   {% endif %}
