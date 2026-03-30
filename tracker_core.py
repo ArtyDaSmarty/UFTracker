@@ -40,6 +40,7 @@ DEFAULT_ALTER_PREFIXES = ["UFA-"]
 DEFAULT_AFFILIATION_PREFIXES = ["AFF-"]
 LOCATION_PREFIX = "LOC-"
 LEGACY_VALUE = "LEGACY"
+INDEPENDENT_AFFILIATION_ID = "__independent__"
 STATUS_OPTIONS = ["Current", "Formerly", "Independent"]
 ROLE_OPTIONS = ["user", "mod", "admin"]
 USER_LEVEL_OPTIONS = [1, 2, 3, 4]
@@ -946,14 +947,22 @@ def save_alter_profile(storage, alter_id, form):
 
 def update_affiliation_membership(storage, alter_id, affiliation_id, status):
     data = load_data(storage)
-    if alter_id not in data["alters"] or affiliation_id not in data["affiliations"]:
+    if alter_id not in data["alters"]:
+        return False, "Alter must exist."
+    status = status if status in STATUS_OPTIONS else STATUS_OPTIONS[0]
+    if status == "Independent":
+        affiliation_id = INDEPENDENT_AFFILIATION_ID
+    elif affiliation_id not in data["affiliations"]:
         return False, "Alter and affiliation must exist."
     status = status if status in STATUS_OPTIONS else STATUS_OPTIONS[0]
     profile = data["alter_profiles"].setdefault(alter_id, legacy_profile())
     profile["affiliations"] = [item for item in profile["affiliations"] if item["value"] != affiliation_id]
+    if affiliation_id == INDEPENDENT_AFFILIATION_ID:
+        profile["affiliations"] = [item for item in profile["affiliations"] if item["value"] != INDEPENDENT_AFFILIATION_ID]
     profile["affiliations"].append({"value": affiliation_id, "status": status})
     touch_entry(data, "alters", alter_id)
-    touch_entry(data, "affiliations", affiliation_id)
+    if affiliation_id in data["affiliations"]:
+        touch_entry(data, "affiliations", affiliation_id)
     save_data(storage, data)
     return True, "Updated affiliation membership."
 
@@ -961,12 +970,15 @@ def update_affiliation_membership(storage, alter_id, affiliation_id, status):
 def remove_affiliation_membership(storage, alter_id, affiliation_id):
     data = load_data(storage)
     profile = data["alter_profiles"].setdefault(alter_id, legacy_profile())
+    if not affiliation_id:
+        affiliation_id = INDEPENDENT_AFFILIATION_ID
     before = len(profile["affiliations"])
     profile["affiliations"] = [item for item in profile["affiliations"] if item["value"] != affiliation_id]
     if len(profile["affiliations"]) == before:
         return False, "That affiliation is not assigned."
     touch_entry(data, "alters", alter_id)
-    touch_entry(data, "affiliations", affiliation_id)
+    if affiliation_id in data["affiliations"]:
+        touch_entry(data, "affiliations", affiliation_id)
     save_data(storage, data)
     return True, "Removed affiliation membership."
 
@@ -1315,7 +1327,7 @@ def format_affiliation_entries(data, entries):
     if not entries:
         return LEGACY_VALUE
     return "; ".join(
-        f'{data["affiliations"].get(item["value"], item["value"])} [{item["status"]}]'
+        f'{("Independent" if item["value"] == INDEPENDENT_AFFILIATION_ID else data["affiliations"].get(item["value"], item["value"]))} [{item["status"]}]'
         for item in entries
     )
 
@@ -1327,9 +1339,9 @@ def build_affiliation_links(data, entries):
         linked.append(
             {
                 "id": affiliation_id,
-                "name": data["affiliations"].get(affiliation_id, affiliation_id),
+                "name": "Independent" if affiliation_id == INDEPENDENT_AFFILIATION_ID else data["affiliations"].get(affiliation_id, affiliation_id),
                 "status": item["status"],
-                "is_linkable": True,
+                "is_linkable": affiliation_id != INDEPENDENT_AFFILIATION_ID,
             }
         )
     return linked
@@ -1410,7 +1422,10 @@ def build_alter_view(data, alter_id, user_level=4):
     visible_location_id = data["location_bindings"].get(alter_id, "")
     if visible_location_id and not entry_is_accessible(data, "location", visible_location_id, user_level):
         visible_location_id = ""
-    visible_profile_affiliations = [item for item in profile.get("affiliations", []) if item["value"] in visible_affiliation_ids]
+    visible_profile_affiliations = [
+        item for item in profile.get("affiliations", [])
+        if item["value"] in visible_affiliation_ids or item["value"] == INDEPENDENT_AFFILIATION_ID
+    ]
     return {
         "id": alter_id,
         "name": data["alters"][alter_id],

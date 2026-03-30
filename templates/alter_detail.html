@@ -87,6 +87,7 @@
       </div>
     </form>
     <datalist id="affiliation-options">
+      <option value="" label="Independent"></option>
       {% for entry_id, name in view.affiliations %}
       <option value="{{ entry_id }}" label="{{ name }} ({{ entry_id }})"></option>
       {% endfor %}
