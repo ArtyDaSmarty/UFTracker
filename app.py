@@ -1,3 +1,4 @@
+import mimetypes
 import os
 import logging
 from pathlib import Path
@@ -17,6 +18,7 @@ from tracker_core import (
     ORGAN_OPTIONS,
     RELATIONSHIP_STYLE_OPTIONS,
     STATUS_OPTIONS,
+    SITE_SETTINGS_FILE,
     StorageError,
     STORAGE_SETTINGS_FILE,
     USER_FILE,
@@ -32,6 +34,7 @@ from tracker_core import (
     create_alter_prefix,
     create_relation_tag,
     create_special_relation_tag,
+    delete_entry,
     delete_affiliation_prefix,
     delete_alter_prefix,
     entry_is_accessible,
@@ -43,6 +46,7 @@ from tracker_core import (
     import_gallery_media_from_url,
     is_managed_media_url,
     load_data,
+    load_site_settings,
     load_storage_settings,
     load_users,
     LocalStorage,
@@ -61,6 +65,7 @@ from tracker_core import (
     resolve_entry_reference,
     rename_entry,
     save_alter_profile,
+    save_site_settings,
     save_storage_settings,
     save_uploaded_json,
     save_users,
@@ -156,9 +161,17 @@ def get_storage_settings_data():
     return load_storage_settings(DATA_DIR)
 
 
+def get_site_settings_data():
+    if has_request_context():
+        if not hasattr(g, "site_settings_cache"):
+            g.site_settings_cache = load_site_settings(DATA_DIR)
+        return g.site_settings_cache
+    return load_site_settings(DATA_DIR)
+
+
 def clear_request_caches():
     if has_request_context():
-        for attr in ("users_data_cache", "tracker_data_cache", "storage_settings_cache", "current_user_cache"):
+        for attr in ("users_data_cache", "tracker_data_cache", "storage_settings_cache", "site_settings_cache", "current_user_cache"):
             if hasattr(g, attr):
                 delattr(g, attr)
 
@@ -235,6 +248,7 @@ def tracker_write_required(view):
 def inject_globals():
     user = current_user()
     storage_settings = get_storage_settings_data()
+    site_settings = get_site_settings_data()
     return {
         "current_user": user,
         "current_role": user["role"] if user else None,
@@ -250,6 +264,9 @@ def inject_globals():
         "relationship_style_options": RELATIONSHIP_STYLE_OPTIONS,
         "legacy_value": LEGACY_VALUE,
         "storage_settings": storage_settings,
+        "site_settings": site_settings,
+        "site_name": site_settings.get("site_name", "United Front Technical Database"),
+        "favicon_url": url_for("site_favicon") if site_settings.get("favicon_name") else "",
         "data_dir": str(DATA_DIR),
     }
 
@@ -276,11 +293,83 @@ def media_file(kind, entry_id, filename):
     return Response(payload, mimetype=Path(filename).suffix and ({".jpg":"image/jpeg",".jpeg":"image/jpeg",".png":"image/png",".gif":"image/gif",".webp":"image/webp"}.get(Path(filename).suffix.lower(), "application/octet-stream")) or "application/octet-stream")
 
 
+@app.route("/favicon.ico")
+def site_favicon():
+    settings = get_site_settings_data()
+    favicon_name = settings.get("favicon_name", "").strip()
+    if not favicon_name:
+        return ("", 204)
+    path = DATA_DIR / "branding" / favicon_name
+    if not path.exists():
+        return ("", 204)
+    return Response(path.read_bytes(), mimetype=mimetypes.guess_type(path.name)[0] or "image/x-icon")
+
+
 @app.route("/admin")
 @login_required
 @roles_required("admin")
 def admin_options():
     return render_template("admin_options.html")
+
+
+@app.route("/admin/branding", methods=["GET", "POST"])
+@login_required
+@roles_required("admin")
+def admin_branding():
+    settings = get_site_settings_data()
+    if request.method == "POST":
+        updated = {
+            "site_name": request.form.get("site_name", "").strip() or settings.get("site_name", "United Front Technical Database"),
+            "favicon_name": settings.get("favicon_name", ""),
+        }
+        favicon = request.files.get("favicon_file")
+        if favicon and favicon.filename:
+            suffix = Path(secure_filename(favicon.filename)).suffix.lower()
+            if suffix not in {".ico", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"}:
+                flash("Favicon must be ICO, PNG, JPG, GIF, WEBP, or SVG.", "error")
+                return redirect(url_for("admin_branding"))
+            branding_dir = DATA_DIR / "branding"
+            branding_dir.mkdir(parents=True, exist_ok=True)
+            if updated["favicon_name"]:
+                old_path = branding_dir / updated["favicon_name"]
+                if old_path.exists():
+                    old_path.unlink()
+            filename = f"favicon{suffix}"
+            (branding_dir / filename).write_bytes(favicon.read())
+            updated["favicon_name"] = filename
+        save_site_settings(DATA_DIR, updated)
+        clear_request_caches()
+        flash("Branding updated.", "success")
+        return redirect(url_for("admin_branding"))
+    return render_template("admin_branding.html", settings=settings)
+
+
+@app.route("/admin/entries", methods=["GET", "POST"])
+@login_required
+@roles_required("admin")
+def admin_entries():
+    if request.method == "POST":
+        kind = request.form.get("kind", "")
+        entry_id = request.form.get("entry_id", "").strip()
+        query = request.form.get("q", "").strip()
+        data = get_tracker_data()
+        gallery_urls = []
+        if kind == "alter":
+            gallery_urls = list(data.get("alter_profiles", {}).get(entry_id, {}).get("gallery", []))
+        elif kind == "location":
+            gallery_urls = list(data.get("location_galleries", {}).get(entry_id, []))
+        success, message = delete_entry(storage, kind, entry_id)
+        if success:
+            for image_url in gallery_urls:
+                delete_gallery_upload(image_url)
+        clear_request_caches()
+        flash(message, "success" if success else "error")
+        return redirect(url_for("admin_entries", kind=kind or "alter", q=query))
+
+    kind = request.args.get("kind", "alter")
+    query = request.args.get("q", "").strip()
+    results = search_entries(get_tracker_data(), kind, query, 4)
+    return render_template("admin_entries.html", kind=kind, query=query, results=results)
 
 
 @app.route("/register", methods=["GET", "POST"])
