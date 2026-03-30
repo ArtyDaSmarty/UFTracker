@@ -1,4 +1,5 @@
 import os
+import logging
 from pathlib import Path
 
 from flask import Flask, Response, flash, g, has_request_context, jsonify, redirect, render_template, request, session, url_for
@@ -38,8 +39,6 @@ from tracker_core import (
     generate_unique_hash,
     get_affiliation_prefixes,
     get_alter_prefixes,
-    has_legacy_document,
-    import_legacy_json_documents,
     get_storage,
     import_gallery_media_from_url,
     is_managed_media_url,
@@ -57,6 +56,7 @@ from tracker_core import (
     remove_gallery_item,
     remove_occupation_entry,
     remove_relation,
+    resolve_entry_reference,
     rename_entry,
     save_alter_profile,
     save_storage_settings,
@@ -77,29 +77,21 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 migrate_legacy_local_files(APP_DIR, DATA_DIR)
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "change-me-for-production")
+logger = logging.getLogger(__name__)
 
 
-def legacy_json_sources():
-    sources = []
+def initialize_storage():
     try:
-        configured_storage = get_storage(DATA_DIR)
-        if not isinstance(configured_storage, LocalStorage):
-            media_storage = getattr(configured_storage, "media_storage", None)
-            for candidate in (media_storage, configured_storage):
-                if candidate is None or isinstance(candidate, LocalStorage):
-                    continue
-                if any(has_legacy_document(candidate, name) for name in (DATA_FILE, HASH_FILE, USER_FILE)):
-                    sources.append(candidate)
-    except RuntimeError:
-        pass
-    sources.append(LocalStorage(DATA_DIR))
-    return sources
+        current_storage = get_storage(DATA_DIR)
+        ensure_storage_files(current_storage)
+        migrate_gallery_media(current_storage, DATA_DIR)
+        return current_storage
+    except Exception as error:
+        logger.exception("Storage initialization failed")
+        raise RuntimeError(f"Storage initialization failed: {error}") from error
 
 
-storage = get_storage(DATA_DIR)
-import_legacy_json_documents(storage, legacy_json_sources())
-ensure_storage_files(storage)
-migrate_gallery_media(storage, DATA_DIR)
+storage = initialize_storage()
 
 
 @app.errorhandler(StorageError)
@@ -114,11 +106,7 @@ def handle_storage_error(error):
 
 def refresh_storage():
     global storage
-    storage = get_storage(DATA_DIR)
-    import_legacy_json_documents(storage, legacy_json_sources())
-    ensure_storage_files(storage)
-    migrate_gallery_media(storage, DATA_DIR)
-    clear_request_caches()
+    storage = initialize_storage()
     return storage
 
 
@@ -502,7 +490,7 @@ def save_alter(alter_id):
     success, message = rename_entry(storage, "alters", "alter", alter_id, request.form.get("name", ""))
     if success:
         success, message = save_alter_profile(storage, alter_id, request.form)
-    location_id = request.form.get("location_id", "").strip()
+    location_id = resolve_entry_reference(data, "location", request.form.get("location_id", ""), user_level)
     if success and location_id and entry_is_accessible(data, "location", location_id, user_level):
         success, message = bind_location(storage, alter_id, location_id)
     elif success and location_id:
@@ -521,7 +509,7 @@ def update_alter_affiliations(alter_id):
     if not entry_is_accessible(data, "alter", alter_id, user_level):
         flash("You do not have access to that alter.", "error")
         return redirect(url_for("dashboard"))
-    affiliation_id = request.form.get("affiliation_id", "")
+    affiliation_id = resolve_entry_reference(data, "affiliation", request.form.get("affiliation_id", ""), user_level)
     if affiliation_id and not entry_is_accessible(data, "affiliation", affiliation_id, user_level):
         flash("You do not have access to that affiliation.", "error")
         return redirect(url_for("alter_detail", alter_id=alter_id))
@@ -556,7 +544,7 @@ def update_alter_occupations(alter_id):
 def update_relation(alter_id):
     data = get_tracker_data()
     user_level = current_user_level()
-    other_id = request.form.get("other_id", "")
+    other_id = resolve_entry_reference(data, "alter", request.form.get("other_id", ""), user_level)
     if not entry_is_accessible(data, "alter", alter_id, user_level) or (other_id and not entry_is_accessible(data, "alter", other_id, user_level)):
         flash("You do not have access to one or more alters in that relation.", "error")
         return redirect(url_for("dashboard"))
@@ -754,13 +742,10 @@ def admin_storage():
     current_settings = get_storage_settings_data()
     if request.method == "POST":
         action = request.form.get("action", "save")
-        database_url = request.form.get("database_url", "").strip()
         access_key = request.form.get("s3_access_key", "").strip()
         secret_key = request.form.get("s3_secret_key", "").strip()
         settings = {
             "backend": request.form.get("backend", "local").strip().lower(),
-            "media_backend": request.form.get("media_backend", "local").strip().lower(),
-            "database_url": database_url or current_settings.get("database_url", ""),
             "s3_endpoint": request.form.get("s3_endpoint", "").strip(),
             "s3_bucket": request.form.get("s3_bucket", "").strip(),
             "s3_region": request.form.get("s3_region", "auto").strip() or "auto",
@@ -769,16 +754,10 @@ def admin_storage():
             "s3_prefix": request.form.get("s3_prefix", "").strip(),
             "s3_path_style": request.form.get("s3_path_style") == "on",
         }
-        if settings["backend"] not in {"local", "s3", "postgres"}:
-            flash("Storage backend must be local, s3, or postgres.", "error")
+        if settings["backend"] not in {"local", "s3"}:
+            flash("Storage backend must be local or s3.", "error")
             return redirect(url_for("admin_storage"))
-        if settings["media_backend"] not in {"local", "s3"}:
-            flash("Media backend must be local or s3.", "error")
-            return redirect(url_for("admin_storage"))
-        if settings["backend"] == "postgres" and not settings["database_url"]:
-            flash("Database URL is required when using PostgreSQL storage.", "error")
-            return redirect(url_for("admin_storage"))
-        if (settings["backend"] == "s3" or settings["media_backend"] == "s3") and not settings["s3_bucket"]:
+        if settings["backend"] == "s3" and not settings["s3_bucket"]:
             flash("S3 bucket is required when using S3 storage.", "error")
             return redirect(url_for("admin_storage"))
         if action == "save":
@@ -793,16 +772,10 @@ def admin_storage():
             return redirect(url_for("admin_storage"))
         if action == "migrate":
             save_storage_settings(DATA_DIR, settings)
+            source_storage = LocalStorage(DATA_DIR)
             try:
                 destination_storage = get_storage(DATA_DIR)
-                if settings["backend"] == "postgres":
-                    imported = import_legacy_json_documents(destination_storage, legacy_json_sources())
-                    local_source = LocalStorage(DATA_DIR)
-                    local_has_data = any(has_legacy_document(local_source, name) for name in (DATA_FILE, HASH_FILE, USER_FILE))
-                    if not imported and local_has_data and not destination_storage.has_document(DATA_FILE):
-                        migrate_storage_data(local_source, destination_storage)
-                else:
-                    migrate_storage_data(LocalStorage(DATA_DIR), destination_storage)
+                migrate_storage_data(source_storage, destination_storage)
                 refresh_storage()
             except RuntimeError as error:
                 flash(str(error), "error")
@@ -814,8 +787,6 @@ def admin_storage():
     return render_template(
         "admin_storage.html",
         backend=settings.get("backend", "local"),
-        media_backend=settings.get("media_backend", "local"),
-        has_database_url=bool(settings.get("database_url")),
         endpoint=settings.get("s3_endpoint", ""),
         bucket=settings.get("s3_bucket", ""),
         region=settings.get("s3_region", "auto"),
