@@ -28,6 +28,8 @@ from tracker_core import (
     build_dashboard_context,
     build_location_view,
     can_view_gallery_for_entry,
+    can_view_profile_for_entry,
+    can_view_relations_for_entry,
     create_entry_with_level,
     create_affiliation_prefix,
     create_alter_prefix,
@@ -69,6 +71,7 @@ from tracker_core import (
     save_uploaded_json,
     save_users,
     search_entries,
+    set_alter_section_lock,
     set_gallery_locked,
     set_relation_tag,
     update_memory_tree,
@@ -79,6 +82,8 @@ from tracker_core import (
     user_can_view_gallery,
     user_can_view_locked_gallery,
     user_can_view_memory,
+    user_can_view_profile,
+    user_can_view_relations,
 )
 
 
@@ -257,6 +262,8 @@ def inject_globals():
         "can_manage_tracker": can_manage_tracker(),
         "can_create_records": can_manage_tracker(),
         "can_view_memory": user_can_view_memory(user),
+        "can_view_profile": user_can_view_profile(user),
+        "can_view_relations": user_can_view_relations(user),
         "can_view_gallery": user_can_view_gallery(user),
         "can_view_locked_gallery": user_can_view_locked_gallery(user),
         "status_options": STATUS_OPTIONS,
@@ -398,6 +405,8 @@ def register():
             "role": role,
             "creation_permission": role == "admin",
             "memory_tree_permission": role == "admin",
+            "profile_permission": role == "admin",
+            "relation_permission": role == "admin",
             "locked_gallery_permission": role == "admin",
             "active": True,
         }
@@ -574,6 +583,8 @@ def alter_detail(alter_id):
         "alter_detail.html",
         view=view,
         can_view_memory=user_can_view_memory(current_user()),
+        can_view_profile=can_view_profile_for_entry(data, current_user(), alter_id),
+        can_view_relations=can_view_relations_for_entry(data, current_user(), alter_id),
         can_view_gallery=can_view_gallery_for_entry(data, current_user(), "alter", alter_id),
     )
 
@@ -587,6 +598,9 @@ def save_alter(alter_id):
     if not entry_is_accessible(data, "alter", alter_id, user_level):
         flash("You do not have access to that alter.", "error")
         return redirect(url_for("dashboard"))
+    if not can_view_profile_for_entry(data, current_user(), alter_id):
+        flash("You do not have permission to view that locked profile.", "error")
+        return redirect(url_for("alter_detail", alter_id=alter_id))
     success, message = rename_entry(storage, "alters", "alter", alter_id, request.form.get("name", ""))
     if success:
         success, message = save_alter_profile(storage, alter_id, request.form)
@@ -645,6 +659,9 @@ def update_alter_occupations(alter_id):
 def update_relation(alter_id):
     data = get_tracker_data()
     user_level = current_user_level()
+    if not can_view_relations_for_entry(data, current_user(), alter_id):
+        flash("You do not have permission to view those locked relations.", "error")
+        return redirect(url_for("alter_detail", alter_id=alter_id))
     other_id = resolve_entry_reference(data, "alter", request.form.get("other_id", ""), user_level)
     if not entry_is_accessible(data, "alter", alter_id, user_level) or (other_id and not entry_is_accessible(data, "alter", other_id, user_level)):
         flash("You do not have access to one or more alters in that relation.", "error")
@@ -664,6 +681,9 @@ def update_relation(alter_id):
 def bulk_relations(alter_id):
     data = get_tracker_data()
     user_level = current_user_level()
+    if not can_view_relations_for_entry(data, current_user(), alter_id):
+        flash("You do not have permission to view those locked relations.", "error")
+        return redirect(url_for("alter_detail", alter_id=alter_id))
     if not entry_is_accessible(data, "alter", alter_id, user_level):
         flash("You do not have access to that alter.", "error")
         return redirect(url_for("dashboard"))
@@ -818,6 +838,24 @@ def update_gallery_lock(kind, entry_id):
     return redirect(url_for(target, **{arg_name: entry_id}))
 
 
+@app.route("/alter-lock/<section>/<alter_id>", methods=["POST"])
+@login_required
+@tracker_write_required
+def update_alter_lock(section, alter_id):
+    data = get_tracker_data()
+    if not entry_is_accessible(data, "alter", alter_id, current_user_level()):
+        flash("You do not have access to that alter.", "error")
+        return redirect(url_for("dashboard"))
+    if section not in {"profile", "relations"}:
+        flash("Unsupported lock type.", "error")
+        return redirect(url_for("alter_detail", alter_id=alter_id))
+    field_name = f"{section}_locked"
+    success, message = set_alter_section_lock(storage, alter_id, section, request.form.get(field_name) == "on")
+    flash(message, "success" if success else "error")
+    clear_request_caches()
+    return redirect(url_for("alter_detail", alter_id=alter_id))
+
+
 @app.route("/affiliation/<affiliation_id>")
 @login_required
 def affiliation_detail(affiliation_id):
@@ -882,6 +920,10 @@ def admin_users():
                 user["creation_permission"] = request.form.get("creation_permission") == "on"
             elif action == "memory" and user.get("role") != "admin":
                 user["memory_tree_permission"] = request.form.get("memory_tree_permission") == "on"
+            elif action == "profile" and user.get("role") != "admin":
+                user["profile_permission"] = request.form.get("profile_permission") == "on"
+            elif action == "relations" and user.get("role") != "admin":
+                user["relation_permission"] = request.form.get("relation_permission") == "on"
             elif action == "locked_gallery" and user.get("role") != "admin":
                 user["locked_gallery_permission"] = request.form.get("locked_gallery_permission") == "on"
             elif action == "active":
