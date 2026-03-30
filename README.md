@@ -11,7 +11,7 @@ A Flask web app for tracking alters, locations, affiliations, relation tags, and
 - Level-based visibility for alters, locations, affiliations, and inquiries
 - Admin-only user management and JSON import
 - Admin-managed storage settings and data migration to S3
-- Gallery sections for alters and locations using image URLs
+- Gallery sections for alters and locations using image URLs or uploaded images
 - Admin removal of alter and affiliation prefixes
 - Persistent data volume support for Docker deployments
 - Optional S3-backed storage for all JSON data
@@ -67,3 +67,8 @@ On startup, the app will also move legacy JSON files from the old app folder int
 - `saved_hashes.json`: reserved/generated IDs
 - `users.json`: login accounts and roles
 - `storage_settings.json`: saved storage backend settings
+
+## Notes
+
+- Recently made/changed entries are filtered by the same level-based access rules as search and detail pages.
+- Alter birthdays are tracked by month and day, not year.
