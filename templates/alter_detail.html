@@ -136,7 +136,7 @@
   <div class="card">
     <h3>Memory Tree</h3>
     {% if can_create_records %}
-    <form method="post" action="{{ url_for('update_alter_memory', alter_id=view.id) }}" class="stack compact" data-async="swap">
+    <form method="post" action="{{ url_for('update_alter_memory', alter_id=view.id) }}" class="stack compact">
       <label>Section
         <select name="era">
           <option value="pre_systemhood">Pre-Systemhood</option>
@@ -152,7 +152,7 @@
     {% if view.memory_tree.pre_systemhood %}
     <div class="top-gap">
       <h4>Pre-Systemhood</h4>
-      <form method="post" action="{{ url_for('update_alter_memory', alter_id=view.id) }}" class="stack compact" data-async="swap" data-sortable-form>
+      <form method="post" action="{{ url_for('update_alter_memory', alter_id=view.id) }}" class="stack compact" data-sortable-form>
         <input type="hidden" name="era" value="pre_systemhood">
         <input type="hidden" name="action" value="reorder">
         <input type="hidden" name="entry_id" value="">
@@ -181,7 +181,7 @@
     {% if view.memory_tree.current %}
     <div class="top-gap">
       <h4>Current</h4>
-      <form method="post" action="{{ url_for('update_alter_memory', alter_id=view.id) }}" class="stack compact" data-async="swap" data-sortable-form>
+      <form method="post" action="{{ url_for('update_alter_memory', alter_id=view.id) }}" class="stack compact" data-sortable-form>
         <input type="hidden" name="era" value="current">
         <input type="hidden" name="action" value="reorder">
         <input type="hidden" name="entry_id" value="">
@@ -211,14 +211,14 @@
   <div class="card">
     <h3>Notes</h3>
     {% if can_create_records %}
-    <form method="post" action="{{ url_for('update_alter_notes', alter_id=view.id) }}" class="stack compact" data-async="swap">
+    <form method="post" action="{{ url_for('update_alter_notes', alter_id=view.id) }}" class="stack compact">
       <label>New Note<textarea name="note_text" rows="3" placeholder="Add a note"></textarea></label>
       <button class="primary" name="action" value="add">Add Note</button>
     </form>
     {% endif %}
 
     {% if view.notes %}
-    <form method="post" action="{{ url_for('update_alter_notes', alter_id=view.id) }}" class="stack compact top-gap" data-async="swap" data-sortable-form>
+    <form method="post" action="{{ url_for('update_alter_notes', alter_id=view.id) }}" class="stack compact top-gap" data-sortable-form>
       <input type="hidden" name="action" value="reorder">
       <input type="hidden" name="entry_id" value="">
       <div class="sortable-list stack compact" data-sortable-list>
