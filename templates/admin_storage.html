@@ -30,7 +30,7 @@
       <label>Access Key<input name="s3_access_key" placeholder="{% if has_access_key %}Stored securely{% else %}Enter access key{% endif %}"></label>
       <label>Secret Key<input name="s3_secret_key" type="password" placeholder="{% if has_secret_key %}Stored securely{% else %}Enter secret key{% endif %}"></label>
       <label>Prefix<input name="s3_prefix" value="{{ prefix }}"></label>
-      <label class="theme-toggle"><input type="checkbox" name="s3_path_style" {% if path_style %}checked{% endif %}> Path Style</label>
+      <label class="toggle-row"><input type="checkbox" name="s3_path_style" {% if path_style %}checked{% endif %}> <span>Path Style</span></label>
       <p class="muted">Enable path-style for S3-compatible providers that do not support bucket subdomains.</p>
       <button class="primary" name="action" value="save">Save Storage Settings</button>
       <button name="action" value="migrate">Save And Migrate Data</button>
