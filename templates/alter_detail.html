@@ -14,7 +14,7 @@
   <div class="card">
     <h3>Profile</h3>
     {% if can_create_records %}
-    <form method="post" action="{{ url_for('save_alter', alter_id=view.id) }}" class="stack compact">
+    <form method="post" action="{{ url_for('save_alter', alter_id=view.id) }}" class="stack compact" data-async="swap">
       <label>Name<input name="name" value="{{ view.name }}"></label>
       <label>Aliases<input name="aliases" value="{{ view.profile.aliases|join(', ') }}"></label>
       <label>Species<input name="species" value="{{ '' if view.profile.species == legacy_value else view.profile.species }}"></label>
@@ -27,6 +27,7 @@
       </label>
       <label>Birthday day<input name="birthday_day" value="{{ view.profile.birthday_day or '' }}"></label>
       <label>Gender<select name="gender"><option value=""></option>{% for item in gender_options %}<option value="{{ item }}" {% if view.profile.gender == item %}selected{% endif %}>{{ item }}</option>{% endfor %}</select></label>
+      <label>Pronouns<input name="pronouns" value="{{ '' if view.profile.pronouns == legacy_value else view.profile.pronouns }}"></label>
       <label>Reproductive Organ<select name="reproductive_organ"><option value=""></option>{% for item in organ_options %}<option value="{{ item }}" {% if view.profile.reproductive_organ == item %}selected{% endif %}>{{ item }}</option>{% endfor %}</select></label>
       <label>Sexual/Romantic Attraction<input name="attraction" value="{{ '' if view.profile.sexual_romantic_attraction == legacy_value else view.profile.sexual_romantic_attraction }}"></label>
       <label>Relationship Style<select name="relationship_style"><option value=""></option>{% for item in relationship_style_options %}<option value="{{ item }}" {% if view.profile.relationship_style == item %}selected{% endif %}>{{ item }}</option>{% endfor %}</select></label>
@@ -34,7 +35,7 @@
       <label>Location ID<input name="location_id" value="{{ view.location_id }}"></label>
       <button class="primary">Save Profile</button>
     </form>
-    <form method="post" action="{{ url_for('update_record_level', kind='alter', entry_id=view.id) }}" class="stack compact top-gap">
+    <form method="post" action="{{ url_for('update_record_level', kind='alter', entry_id=view.id) }}" class="stack compact top-gap" data-async="swap">
       <label>Access level
         <select name="level">{% for level in entry_level_options %}{% if current_level == 4 or level <= current_level %}<option value="{{ level }}" {% if view.level == level %}selected{% endif %}>Level {{ level }}</option>{% endif %}{% endfor %}</select>
       </label>
@@ -52,7 +53,7 @@
   <div class="card">
     <h3>Assignments</h3>
     {% if can_create_records %}
-    <form method="post" action="{{ url_for('update_alter_affiliations', alter_id=view.id) }}" class="stack compact">
+    <form method="post" action="{{ url_for('update_alter_affiliations', alter_id=view.id) }}" class="stack compact" data-async="swap">
       <label>Affiliation
         <select name="affiliation_id">
           <option value=""></option>
@@ -65,7 +66,7 @@
         <button name="action" value="remove">Remove</button>
       </div>
     </form>
-    <form method="post" action="{{ url_for('update_alter_occupations', alter_id=view.id) }}" class="stack compact">
+    <form method="post" action="{{ url_for('update_alter_occupations', alter_id=view.id) }}" class="stack compact" data-async="swap">
       <label>Occupation / Role<input name="occupation"></label>
       <label>Status<select name="status">{% for status in status_options %}<option value="{{ status }}">{{ status }}</option>{% endfor %}</select></label>
       <div class="button-row">
@@ -77,7 +78,7 @@
 
     <h3 class="top-gap">Relations</h3>
     {% if can_create_records %}
-    <form method="post" action="{{ url_for('update_relation', alter_id=view.id) }}" class="stack compact">
+    <form method="post" action="{{ url_for('update_relation', alter_id=view.id) }}" class="stack compact" data-async="swap">
       <label>Other alter ID<input name="other_id"></label>
       <label>Relation tag<select name="tag">{% for tag in view.relation_tags %}<option value="{{ tag }}">{{ tag }}</option>{% endfor %}</select></label>
       <div class="button-row">
@@ -87,7 +88,7 @@
     </form>
     <details class="top-gap">
       <summary>Bulk relation tags</summary>
-      <form method="post" action="{{ url_for('bulk_relations', alter_id=view.id) }}" class="stack compact">
+      <form method="post" action="{{ url_for('bulk_relations', alter_id=view.id) }}" class="stack compact" data-async="swap">
         {% for row in view.bulk_rows %}
         <div class="bulk-row">
           <label><input type="checkbox" name="selected_ids" value="{{ row.id }}"> {{ row.name }} ({{ row.id }})</label>
@@ -115,7 +116,7 @@
 <section class="card top-gap">
   <h3>Gallery</h3>
   {% if can_create_records %}
-  <form method="post" action="{{ url_for('update_gallery', kind='alter', entry_id=view.id) }}" class="stack compact" enctype="multipart/form-data">
+  <form method="post" action="{{ url_for('update_gallery', kind='alter', entry_id=view.id) }}" class="stack compact" enctype="multipart/form-data" data-async="swap">
     <label>Image URL<input name="image_url" placeholder="https://example.com/image.png"></label>
     <label>Upload Image<input name="image_file" type="file" accept=".jpg,.jpeg,.png,.gif,.webp"></label>
     <button class="primary" name="action" value="add">Add To Gallery</button>
@@ -127,7 +128,7 @@
       <img src="{{ image_url }}" alt="Gallery image for {{ view.name }}">
       <a class="muted wrap-anywhere" href="{{ image_url }}" target="_blank" rel="noreferrer">{{ image_url }}</a>
       {% if can_create_records %}
-      <form method="post" action="{{ url_for('update_gallery', kind='alter', entry_id=view.id) }}">
+      <form method="post" action="{{ url_for('update_gallery', kind='alter', entry_id=view.id) }}" data-async="swap">
         <input type="hidden" name="image_url" value="{{ image_url }}">
         <button name="action" value="remove">Remove</button>
       </form>
