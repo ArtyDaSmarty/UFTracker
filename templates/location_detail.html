@@ -4,11 +4,11 @@
   <h2>{{ view.name }}</h2>
   <p class="muted">{{ view.id }} | Level {{ view.level }}</p>
   {% if can_create_records %}
-  <form method="post" action="{{ url_for('rename_record', kind='location', entry_id=view.id) }}" class="stack compact">
+  <form method="post" action="{{ url_for('rename_record', kind='location', entry_id=view.id) }}" class="stack compact" data-async="swap">
     <label>Location name<input name="name" value="{{ view.name }}"></label>
     <button>Rename Location</button>
   </form>
-  <form method="post" action="{{ url_for('update_record_level', kind='location', entry_id=view.id) }}" class="stack compact top-gap">
+  <form method="post" action="{{ url_for('update_record_level', kind='location', entry_id=view.id) }}" class="stack compact top-gap" data-async="swap">
     <label>Access level
       <select name="level">{% for level in entry_level_options %}{% if current_level == 4 or level <= current_level %}<option value="{{ level }}" {% if view.level == level %}selected{% endif %}>Level {{ level }}</option>{% endif %}{% endfor %}</select>
     </label>
@@ -26,7 +26,7 @@
 <section class="card top-gap">
   <h3>Gallery</h3>
   {% if can_create_records %}
-  <form method="post" action="{{ url_for('update_gallery', kind='location', entry_id=view.id) }}" class="stack compact" enctype="multipart/form-data">
+  <form method="post" action="{{ url_for('update_gallery', kind='location', entry_id=view.id) }}" class="stack compact" enctype="multipart/form-data" data-async="swap">
     <label>Image URL<input name="image_url" placeholder="https://example.com/image.png"></label>
     <label>Upload Image<input name="image_file" type="file" accept=".jpg,.jpeg,.png,.gif,.webp"></label>
     <button class="primary" name="action" value="add">Add To Gallery</button>
@@ -38,7 +38,7 @@
       <img src="{{ image_url }}" alt="Gallery image for {{ view.name }}">
       <a class="muted wrap-anywhere" href="{{ image_url }}" target="_blank" rel="noreferrer">{{ image_url }}</a>
       {% if can_create_records %}
-      <form method="post" action="{{ url_for('update_gallery', kind='location', entry_id=view.id) }}">
+      <form method="post" action="{{ url_for('update_gallery', kind='location', entry_id=view.id) }}" data-async="swap">
         <input type="hidden" name="image_url" value="{{ image_url }}">
         <button name="action" value="remove">Remove</button>
       </form>
