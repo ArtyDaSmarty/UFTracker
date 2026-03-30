@@ -4,6 +4,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}{{ site_name }}{% endblock %}</title>
+  <script>
+    (function () {
+      const savedTheme = localStorage.getItem('uftd-theme');
+      if (savedTheme === 'dark' || savedTheme === 'light') {
+        document.documentElement.dataset.theme = savedTheme;
+      }
+    })();
+  </script>
   {% if favicon_url %}
   <link rel="icon" href="{{ favicon_url }}">
   {% endif %}
