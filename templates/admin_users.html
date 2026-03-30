@@ -2,28 +2,31 @@
 {% block content %}
 <section class="card">
   <h2>User Management</h2>
-  <p class="muted">Level 4 is reserved for the single Admin. Level 3 is Mod. New users default to Level 1.</p>
+  <p class="muted">Admins always keep full access. For everyone else, you can control creation access, Memory Tree access, and Locked Galleries access directly.</p>
   {% for user in users %}
   <form method="post" class="stack compact bordered" data-async="swap">
     <input type="hidden" name="user_id" value="{{ user.id }}">
-    <div class="kv"><strong>{{ user.username }}</strong><span>Level {{ user.level }} | {{ user.role|upper }}</span></div>
+    <div class="kv"><strong>{{ user.username }}</strong><span>{{ user.role|upper }}</span></div>
 
-    {% if user.level == 4 %}
-    <p class="muted">This is the only Admin account. Its level is fixed at 4 and creation access is always allowed.</p>
+    {% if user.role == 'admin' %}
+    <p class="muted">This is the Admin account. Its role and permissions stay fully enabled.</p>
     {% else %}
-    <label>Level
-      <select name="level">
-        {% for level in user_level_options %}
-        {% if level < 4 %}
-        <option value="{{ level }}" {% if user.level == level %}selected{% endif %}>Level {{ level }}{% if level == 3 %} (Mod){% endif %}</option>
-        {% endif %}
-        {% endfor %}
+    <label>Role
+      <select name="role">
+        <option value="user" {% if user.role == 'user' %}selected{% endif %}>User</option>
+        <option value="mod" {% if user.role == 'mod' %}selected{% endif %}>Mod</option>
       </select>
     </label>
-    <button name="action" value="level">Update Level</button>
+    <button name="action" value="role">Save Role</button>
 
     <label><input type="checkbox" name="creation_permission" {% if user.creation_permission %}checked{% endif %}> Creation permission</label>
     <button name="action" value="creation">Save Creation Permission</button>
+
+    <label><input type="checkbox" name="memory_tree_permission" {% if user.memory_tree_permission %}checked{% endif %}> Memory Tree permission</label>
+    <button name="action" value="memory">Save Memory Tree Permission</button>
+
+    <label><input type="checkbox" name="locked_gallery_permission" {% if user.locked_gallery_permission %}checked{% endif %}> Locked Galleries permission</label>
+    <button name="action" value="locked_gallery">Save Locked Galleries Permission</button>
     {% endif %}
 
     <label>Reset password<input type="password" name="new_password"></label>
