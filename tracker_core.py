@@ -332,6 +332,7 @@ def legacy_profile():
         "birthday_day": None,
         "birthday_last_processed_year": None,
         "gender": LEGACY_VALUE,
+        "pronouns": LEGACY_VALUE,
         "reproductive_organ": LEGACY_VALUE,
         "sexual_romantic_attraction": LEGACY_VALUE,
         "relationship_style": LEGACY_VALUE,
@@ -838,6 +839,7 @@ def save_alter_profile(storage, alter_id, form):
         profile["birthday_day"] = None
         profile["birthday_last_processed_year"] = None
     profile["gender"] = form.get("gender", "") or LEGACY_VALUE
+    profile["pronouns"] = form.get("pronouns", "").strip() or LEGACY_VALUE
     profile["reproductive_organ"] = form.get("reproductive_organ", "") or LEGACY_VALUE
     profile["sexual_romantic_attraction"] = form.get("attraction", "").strip() or LEGACY_VALUE
     profile["relationship_style"] = form.get("relationship_style", "") or LEGACY_VALUE
@@ -1194,6 +1196,7 @@ def build_alter_view(data, alter_id, user_level=4):
             ("Age", format_age(profile)),
             ("Birthday", birthday_summary(profile)),
             ("Gender", profile.get("gender", LEGACY_VALUE)),
+            ("Pronouns", profile.get("pronouns", LEGACY_VALUE)),
             ("Reproductive Organ", profile.get("reproductive_organ", LEGACY_VALUE)),
             ("Sexual/Romantic Attraction", profile.get("sexual_romantic_attraction", LEGACY_VALUE)),
             ("Relationship Style", profile.get("relationship_style", LEGACY_VALUE)),
