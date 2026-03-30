@@ -124,6 +124,22 @@
         renderFlash('That action failed to complete.', 'error');
       });
     });
+
+    document.addEventListener('click', (event) => {
+      const trigger = event.target.closest('[data-gallery-load]');
+      if (!trigger) {
+        return;
+      }
+      const card = trigger.closest('.gallery-card');
+      const image = card ? card.querySelector('img[data-src]') : null;
+      if (!image) {
+        return;
+      }
+      image.src = image.dataset.src;
+      image.removeAttribute('data-src');
+      image.hidden = false;
+      trigger.remove();
+    });
   </script>
 </body>
 </html>
