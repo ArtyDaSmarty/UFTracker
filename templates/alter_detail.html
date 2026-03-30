@@ -3,7 +3,7 @@
 <section class="hero">
   <div>
     <h2>{{ view.name }}</h2>
-    <p class="muted">{{ view.id }} | Level {{ view.level }}</p>
+    <p class="muted">{{ view.id }}</p>
   </div>
   {% if view.location_id %}
   <a class="button-link" href="{{ url_for('location_detail', location_id=view.location_id) }}">Open Bound Location</a>
@@ -42,12 +42,6 @@
       <option value="{{ entry_id }}" label="{{ name }} ({{ entry_id }})"></option>
       {% endfor %}
     </datalist>
-    <form method="post" action="{{ url_for('update_record_level', kind='alter', entry_id=view.id) }}" class="stack compact top-gap" data-async="swap">
-      <label>Access level
-        <select name="level">{% for level in entry_level_options %}{% if current_level == 4 or level <= current_level %}<option value="{{ level }}" {% if view.level == level %}selected{% endif %}>Level {{ level }}</option>{% endif %}{% endfor %}</select>
-      </label>
-      <button>Update Access Level</button>
-    </form>
     {% endif %}
     <div class="stack compact top-gap">
       {% for label, value in view.profile_summary %}
@@ -87,7 +81,6 @@
       </div>
     </form>
     <datalist id="affiliation-options">
-      <option value="" label="Independent"></option>
       {% for entry_id, name in view.affiliations %}
       <option value="{{ entry_id }}" label="{{ name }} ({{ entry_id }})"></option>
       {% endfor %}
@@ -152,6 +145,7 @@
 <section class="grid cols-2 top-gap">
   <div class="card">
     <h3>Memory Tree</h3>
+    {% if can_view_memory %}
     {% if can_create_records %}
     <form method="post" action="{{ url_for('update_alter_memory', alter_id=view.id) }}" class="stack compact">
       <label>Section
@@ -223,6 +217,12 @@
       </form>
     </div>
     {% endif %}
+    {% if not view.memory_tree.pre_systemhood and not view.memory_tree.current %}
+    <p class="muted top-gap">No memory entries yet.</p>
+    {% endif %}
+    {% else %}
+    <p class="muted top-gap">You cannot view Memory Trees because your account does not have permission.</p>
+    {% endif %}
   </div>
 
   <div class="card">
@@ -265,6 +265,13 @@
 <section class="card top-gap">
   <h3>Gallery</h3>
   {% if can_create_records %}
+  <form method="post" action="{{ url_for('update_gallery_lock', kind='alter', entry_id=view.id) }}" class="stack compact" data-async="swap">
+    <label><input type="checkbox" name="gallery_locked" {% if view.gallery_locked %}checked{% endif %}> Lock this gallery</label>
+    <button>Save Gallery Lock</button>
+  </form>
+  {% endif %}
+  {% if can_view_gallery %}
+  {% if can_create_records %}
   <form method="post" action="{{ url_for('update_gallery', kind='alter', entry_id=view.id) }}" class="stack compact" enctype="multipart/form-data" data-async="swap">
     <label>Image URL<input name="image_url" placeholder="https://example.com/image.png"></label>
     <label>Upload Image<input name="image_file" type="file" accept=".jpg,.jpeg,.png,.gif,.webp"></label>
@@ -292,5 +299,8 @@
     <p class="muted">No gallery images yet.</p>
     {% endfor %}
   </div>
+  {% else %}
+  <p class="muted">{% if view.gallery_locked %}This gallery is locked. You do not have permission to view locked galleries.{% else %}You cannot view galleries because your account does not have permission.{% endif %}</p>
+  {% endif %}
 </section>
 {% endblock %}
