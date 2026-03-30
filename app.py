@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 
-from flask import Flask, Response, flash, redirect, render_template, request, session, url_for
+from flask import Flask, Response, flash, g, has_request_context, redirect, render_template, request, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 
@@ -105,13 +105,52 @@ def delete_gallery_upload(image_url):
     storage.delete_bytes(media_name)
 
 
+def get_users_data():
+    if has_request_context():
+        if not hasattr(g, "users_data_cache"):
+            g.users_data_cache = load_users(storage)
+        return g.users_data_cache
+    return load_users(storage)
+
+
+def get_tracker_data():
+    if has_request_context():
+        if not hasattr(g, "tracker_data_cache"):
+            g.tracker_data_cache = load_data(storage)
+        return g.tracker_data_cache
+    return load_data(storage)
+
+
+def get_storage_settings_data():
+    if has_request_context():
+        if not hasattr(g, "storage_settings_cache"):
+            g.storage_settings_cache = load_storage_settings(DATA_DIR)
+        return g.storage_settings_cache
+    return load_storage_settings(DATA_DIR)
+
+
+def clear_request_caches():
+    if has_request_context():
+        for attr in ("users_data_cache", "tracker_data_cache", "storage_settings_cache", "current_user_cache"):
+            if hasattr(g, attr):
+                delattr(g, attr)
+
+
 def current_user():
+    if has_request_context() and hasattr(g, "current_user_cache"):
+        return g.current_user_cache
     user_id = session.get("user_id")
     if not user_id:
+        if has_request_context():
+            g.current_user_cache = None
         return None
-    for user in load_users(storage)["users"]:
+    for user in get_users_data()["users"]:
         if user["id"] == user_id and user.get("active", True):
+            if has_request_context():
+                g.current_user_cache = user
             return user
+    if has_request_context():
+        g.current_user_cache = None
     return None
 
 
@@ -164,7 +203,7 @@ def tracker_write_required(view):
 @app.context_processor
 def inject_globals():
     user = current_user()
-    storage_settings = load_storage_settings(DATA_DIR)
+    storage_settings = get_storage_settings_data()
     return {
         "current_user": user,
         "current_role": user["role"] if user else None,
@@ -195,7 +234,7 @@ def media_file(kind, entry_id, filename):
     if kind not in {"alter", "location"}:
         flash("Unknown media type.", "error")
         return redirect(url_for("dashboard"))
-    if not entry_is_accessible(load_data(storage), kind, entry_id, current_user_level()):
+    if not entry_is_accessible(get_tracker_data(), kind, entry_id, current_user_level()):
         flash("You do not have access to that media.", "error")
         return redirect(url_for("dashboard"))
     media_name = media_storage_name(kind, entry_id, filename)
@@ -215,7 +254,7 @@ def admin_options():
 
 @app.route("/register", methods=["GET", "POST"])
 def register():
-    users_data = load_users(storage)
+    users_data = get_users_data()
     if request.method == "POST":
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
@@ -239,6 +278,7 @@ def register():
         }
         users_data["users"].append(user)
         save_users(storage, users_data)
+        clear_request_caches()
         session["user_id"] = user["id"]
         flash(f"Account created. Logged in as {role}.", "success")
         return redirect(url_for("dashboard"))
@@ -250,7 +290,7 @@ def login():
     if request.method == "POST":
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
-        for user in load_users(storage)["users"]:
+        for user in get_users_data()["users"]:
             if user["username"].lower() == username.lower() and user.get("active", True):
                 if check_password_hash(user["password_hash"], password):
                     session["user_id"] = user["id"]
@@ -272,7 +312,7 @@ def logout():
 @app.route("/dashboard")
 @login_required
 def dashboard():
-    data = load_data(storage)
+    data = get_tracker_data()
     context = build_dashboard_context(data, current_user_level())
     return render_template(
         "dashboard.html",
@@ -293,7 +333,7 @@ def dashboard():
 @login_required
 @tracker_write_required
 def generate_id(kind):
-    data = load_data(storage)
+    data = get_tracker_data()
     prefix = request.form.get("prefix", "")
     if kind == "alter":
         if prefix and prefix not in get_alter_prefixes(data):
@@ -316,7 +356,7 @@ def generate_id(kind):
 @login_required
 @tracker_write_required
 def create_record(kind):
-    data = load_data(storage)
+    data = get_tracker_data()
     user_level = current_user_level()
     name = request.form.get("name", "")
     entry_id = request.form.get("entry_id", "").strip()
@@ -388,14 +428,14 @@ def add_special_tag():
 def search():
     kind = request.args.get("kind", "alter")
     query = request.args.get("q", "")
-    results = search_entries(load_data(storage), kind, query, current_user_level())
+    results = search_entries(get_tracker_data(), kind, query, current_user_level())
     return render_template("search_results.html", kind=kind, query=query, results=results)
 
 
 @app.route("/alter/<alter_id>")
 @login_required
 def alter_detail(alter_id):
-    view = build_alter_view(load_data(storage), alter_id, current_user_level())
+    view = build_alter_view(get_tracker_data(), alter_id, current_user_level())
     if not view:
         flash("Unknown or inaccessible alter.", "error")
         return redirect(url_for("dashboard"))
@@ -406,7 +446,7 @@ def alter_detail(alter_id):
 @login_required
 @tracker_write_required
 def save_alter(alter_id):
-    data = load_data(storage)
+    data = get_tracker_data()
     user_level = current_user_level()
     if not entry_is_accessible(data, "alter", alter_id, user_level):
         flash("You do not have access to that alter.", "error")
@@ -420,6 +460,7 @@ def save_alter(alter_id):
     elif success and location_id:
         success, message = False, "You do not have access to that location."
     flash(message, "success" if success else "error")
+    clear_request_caches()
     return redirect(url_for("alter_detail", alter_id=alter_id))
 
 
@@ -427,7 +468,7 @@ def save_alter(alter_id):
 @login_required
 @tracker_write_required
 def update_alter_affiliations(alter_id):
-    data = load_data(storage)
+    data = get_tracker_data()
     user_level = current_user_level()
     if not entry_is_accessible(data, "alter", alter_id, user_level):
         flash("You do not have access to that alter.", "error")
@@ -441,6 +482,7 @@ def update_alter_affiliations(alter_id):
     else:
         success, message = update_affiliation_membership(storage, alter_id, affiliation_id, request.form.get("status", "Current"))
     flash(message, "success" if success else "error")
+    clear_request_caches()
     return redirect(url_for("alter_detail", alter_id=alter_id))
 
 
@@ -448,7 +490,7 @@ def update_alter_affiliations(alter_id):
 @login_required
 @tracker_write_required
 def update_alter_occupations(alter_id):
-    if not entry_is_accessible(load_data(storage), "alter", alter_id, current_user_level()):
+    if not entry_is_accessible(get_tracker_data(), "alter", alter_id, current_user_level()):
         flash("You do not have access to that alter.", "error")
         return redirect(url_for("dashboard"))
     if request.form.get("action") == "remove":
@@ -456,6 +498,7 @@ def update_alter_occupations(alter_id):
     else:
         success, message = update_occupation_entry(storage, alter_id, request.form.get("occupation", ""), request.form.get("status", "Current"))
     flash(message, "success" if success else "error")
+    clear_request_caches()
     return redirect(url_for("alter_detail", alter_id=alter_id))
 
 
@@ -463,7 +506,7 @@ def update_alter_occupations(alter_id):
 @login_required
 @tracker_write_required
 def update_relation(alter_id):
-    data = load_data(storage)
+    data = get_tracker_data()
     user_level = current_user_level()
     other_id = request.form.get("other_id", "")
     if not entry_is_accessible(data, "alter", alter_id, user_level) or (other_id and not entry_is_accessible(data, "alter", other_id, user_level)):
@@ -474,6 +517,7 @@ def update_relation(alter_id):
     else:
         success, message = set_relation_tag(storage, alter_id, request.form.get("tag", ""), other_id)
     flash(message, "success" if success else "error")
+    clear_request_caches()
     return redirect(url_for("alter_detail", alter_id=alter_id))
 
 
@@ -481,7 +525,7 @@ def update_relation(alter_id):
 @login_required
 @tracker_write_required
 def bulk_relations(alter_id):
-    data = load_data(storage)
+    data = get_tracker_data()
     user_level = current_user_level()
     if not entry_is_accessible(data, "alter", alter_id, user_level):
         flash("You do not have access to that alter.", "error")
@@ -498,13 +542,14 @@ def bulk_relations(alter_id):
             success, message = set_relation_tag(storage, alter_id, request.form.get(f"tag_{other_id}", ""), other_id)
         messages.append(message)
     flash(" | ".join(messages) if messages else "No alters selected.", "success" if messages else "error")
+    clear_request_caches()
     return redirect(url_for("alter_detail", alter_id=alter_id))
 
 
 @app.route("/location/<location_id>")
 @login_required
 def location_detail(location_id):
-    view = build_location_view(load_data(storage), location_id, current_user_level())
+    view = build_location_view(get_tracker_data(), location_id, current_user_level())
     if not view:
         flash("Unknown or inaccessible location.", "error")
         return redirect(url_for("dashboard"))
@@ -518,7 +563,7 @@ def update_gallery(kind, entry_id):
     if kind not in {"alter", "location"}:
         flash("Unsupported gallery type.", "error")
         return redirect(url_for("dashboard"))
-    if not entry_is_accessible(load_data(storage), kind, entry_id, current_user_level()):
+    if not entry_is_accessible(get_tracker_data(), kind, entry_id, current_user_level()):
         flash("You do not have access to that entry.", "error")
         return redirect(url_for("dashboard"))
     image_url = request.form.get("image_url", "").strip()
@@ -552,6 +597,7 @@ def update_gallery(kind, entry_id):
         if not success and uploaded_image_url:
             delete_gallery_upload(uploaded_image_url)
     flash(message, "success" if success else "error")
+    clear_request_caches()
     target = "alter_detail" if kind == "alter" else "location_detail"
     arg_name = "alter_id" if kind == "alter" else "location_id"
     return redirect(url_for(target, **{arg_name: entry_id}))
@@ -560,7 +606,7 @@ def update_gallery(kind, entry_id):
 @app.route("/affiliation/<affiliation_id>")
 @login_required
 def affiliation_detail(affiliation_id):
-    view = build_affiliation_view(load_data(storage), affiliation_id, current_user_level())
+    view = build_affiliation_view(get_tracker_data(), affiliation_id, current_user_level())
     if not view:
         flash("Unknown or inaccessible affiliation.", "error")
         return redirect(url_for("dashboard"))
@@ -572,11 +618,12 @@ def affiliation_detail(affiliation_id):
 @tracker_write_required
 def rename_record(kind, entry_id):
     bucket_map = {"alter": ("alters", "alter"), "location": ("locations", "location"), "affiliation": ("affiliations", "affiliation")}
-    if not entry_is_accessible(load_data(storage), kind, entry_id, current_user_level()):
+    if not entry_is_accessible(get_tracker_data(), kind, entry_id, current_user_level()):
         flash("You do not have access to that entry.", "error")
         return redirect(url_for("dashboard"))
     success, message = rename_entry(storage, bucket_map[kind][0], bucket_map[kind][1], entry_id, request.form.get("name", ""))
     flash(message, "success" if success else "error")
+    clear_request_caches()
     return redirect(request.referrer or url_for("dashboard"))
 
 
@@ -585,7 +632,7 @@ def rename_record(kind, entry_id):
 @tracker_write_required
 def update_record_level(kind, entry_id):
     bucket_map = {"alter": "alters", "location": "locations", "affiliation": "affiliations"}
-    if not entry_is_accessible(load_data(storage), kind, entry_id, current_user_level()):
+    if not entry_is_accessible(get_tracker_data(), kind, entry_id, current_user_level()):
         flash("You do not have access to that entry.", "error")
         return redirect(url_for("dashboard"))
     try:
@@ -597,6 +644,7 @@ def update_record_level(kind, entry_id):
         return redirect(request.referrer or url_for("dashboard"))
     success, message = set_entry_level(storage, bucket_map[kind], entry_id, requested_level)
     flash(message, "success" if success else "error")
+    clear_request_caches()
     return redirect(request.referrer or url_for("dashboard"))
 
 
@@ -613,6 +661,7 @@ def admin_import():
             return redirect(url_for("admin_import"))
         success, message = save_uploaded_json(storage, target_map[target], file.read())
         flash(message, "success" if success else "error")
+        clear_request_caches()
         return redirect(url_for("admin_import"))
     return render_template("admin_import.html")
 
@@ -621,7 +670,7 @@ def admin_import():
 @login_required
 @roles_required("admin")
 def admin_users():
-    users_data = load_users(storage)
+    users_data = get_users_data()
     if request.method == "POST":
         target_id = request.form.get("user_id", "")
         for user in users_data["users"]:
@@ -644,6 +693,7 @@ def admin_users():
             elif action == "active":
                 user["active"] = request.form.get("active") == "on"
         save_users(storage, users_data)
+        clear_request_caches()
         flash("User updated.", "success")
         return redirect(url_for("admin_users"))
     return render_template("admin_users.html", users=users_data["users"])
@@ -653,7 +703,7 @@ def admin_users():
 @login_required
 @roles_required("admin")
 def admin_storage():
-    current_settings = load_storage_settings(DATA_DIR)
+    current_settings = get_storage_settings_data()
     if request.method == "POST":
         action = request.form.get("action", "save")
         access_key = request.form.get("s3_access_key", "").strip()
@@ -681,6 +731,7 @@ def admin_storage():
             except RuntimeError as error:
                 flash(str(error), "error")
                 return redirect(url_for("admin_storage"))
+            clear_request_caches()
             flash("Storage settings saved.", "success")
             return redirect(url_for("admin_storage"))
         if action == "migrate":
@@ -693,9 +744,10 @@ def admin_storage():
             except RuntimeError as error:
                 flash(str(error), "error")
                 return redirect(url_for("admin_storage"))
+            clear_request_caches()
             flash("Data migrated to the configured storage backend.", "success")
             return redirect(url_for("admin_storage"))
-    settings = load_storage_settings(DATA_DIR)
+    settings = get_storage_settings_data()
     return render_template(
         "admin_storage.html",
         backend=settings.get("backend", "local"),
