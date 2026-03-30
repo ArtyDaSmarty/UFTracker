@@ -12,25 +12,53 @@
   </div>
 </section>
 
-<section class="grid cols-5">
+<section class="grid cols-3">
   <div class="card">
     <h3>Create Records</h3>
     {% if can_create_records %}
     <form method="post" action="{{ url_for('create_record', kind='alter') }}" class="stack compact">
       <label>Alter name<input name="name" required></label>
-      <label>Alter ID<input name="entry_id" placeholder="Leave blank to auto-generate"></label>
+      <label>Alter ID<input name="entry_id" placeholder="Leave blank to use generated or manual ID"></label>
       <label>Access level
         <select name="level">{% for level in entry_level_options %}{% if current_level == 4 or level <= current_level %}<option value="{{ level }}" {% if level == current_level or (current_level == 4 and level == 3) %}selected{% endif %}>Level {{ level }}</option>{% endif %}{% endfor %}</select>
       </label>
       <button class="primary">Create Alter</button>
     </form>
-    <form method="post" action="{{ url_for('create_record', kind='location') }}" class="stack compact">
+    <form method="post" action="{{ url_for('generate_id', kind='alter') }}" class="stack compact top-gap inline-form-card">
+      <label>Generate Alter ID Prefix
+        <select name="prefix">
+          <option value="">No Prefix</option>
+          {% for prefix in alter_prefixes %}<option value="{{ prefix }}">{{ prefix }}</option>{% endfor %}
+        </select>
+      </label>
+      <button type="submit">Generate Alter ID</button>
+    </form>
+
+    <form method="post" action="{{ url_for('create_record', kind='location') }}" class="stack compact top-gap">
       <label>Location name<input name="name" required></label>
-      <label>Location ID<input name="entry_id" placeholder="Leave blank to auto-generate LOC-"></label>
+      <label>Location ID<input name="entry_id" placeholder="Leave blank to use generated or manual ID"></label>
       <label>Access level
         <select name="level">{% for level in entry_level_options %}{% if current_level == 4 or level <= current_level %}<option value="{{ level }}" {% if level == current_level or (current_level == 4 and level == 3) %}selected{% endif %}>Level {{ level }}</option>{% endif %}{% endfor %}</select>
       </label>
       <button class="primary">Create Location</button>
+    </form>
+    <form method="post" action="{{ url_for('generate_id', kind='location') }}" class="stack compact top-gap inline-form-card">
+      <label>Generate Location ID Prefix
+        <select name="prefix">
+          <option value="">No Prefix</option>
+          <option value="LOC-">LOC-</option>
+        </select>
+      </label>
+      <button type="submit">Generate Location ID</button>
+    </form>
+
+    <form method="post" action="{{ url_for('create_record', kind='affiliation') }}" class="stack compact top-gap">
+      <label>Affiliation name<input name="name" required></label>
+      <label>Affiliation ID<input name="entry_id" placeholder="Leave blank to auto-generate"></label>
+      <label>Access level
+        <select name="level">{% for level in entry_level_options %}{% if current_level == 4 or level <= current_level %}<option value="{{ level }}" {% if level == current_level or (current_level == 4 and level == 3) %}selected{% endif %}>Level {{ level }}</option>{% endif %}{% endfor %}</select>
+      </label>
+      <button class="primary">Create Affiliation</button>
     </form>
     {% else %}
     <p class="muted">This account is search and inquiry only.</p>
@@ -80,27 +108,8 @@
         </div>
         {% endfor %}
       </div>
-      <p class="muted">Location prefix is fixed to LOC-.</p>
+      <p class="muted">Location prefix can be `LOC-` or no prefix when generating IDs.</p>
     </div>
-  </div>
-
-  <div class="card">
-    <h3>Affiliations</h3>
-    {% if can_create_records %}
-    <form method="post" action="{{ url_for('create_record', kind='affiliation') }}" class="stack compact">
-      <label>Affiliation name<input name="name" required></label>
-      <label>Affiliation ID<input name="entry_id" placeholder="Leave blank to auto-generate"></label>
-      <label>Access level
-        <select name="level">{% for level in entry_level_options %}{% if current_level == 4 or level <= current_level %}<option value="{{ level }}" {% if level == current_level or (current_level == 4 and level == 3) %}selected{% endif %}>Level {{ level }}</option>{% endif %}{% endfor %}</select>
-      </label>
-      <button class="primary">Create Affiliation</button>
-    </form>
-    {% endif %}
-    <form method="get" action="{{ url_for('search') }}" class="stack compact">
-      <input type="hidden" name="kind" value="affiliation">
-      <label>Search affiliations<input name="q"></label>
-      <button>Search</button>
-    </form>
   </div>
 
   <div class="card">
@@ -138,6 +147,23 @@
       <input type="hidden" name="kind" value="affiliation">
       <button>Search Affiliations</button>
     </form>
+  </div>
+
+  <div class="card">
+    <h3>Recently Made</h3>
+    <div class="stack compact">
+      {% for item in context.recent_changes %}
+      {% if item.kind == 'alter' %}
+      <a class="list-item" href="{{ url_for('alter_detail', alter_id=item.id) }}">{{ item.name }} <span>{{ item.label }} | {{ item.id }}</span></a>
+      {% elif item.kind == 'location' %}
+      <a class="list-item" href="{{ url_for('location_detail', location_id=item.id) }}">{{ item.name }} <span>{{ item.label }} | {{ item.id }}</span></a>
+      {% else %}
+      <a class="list-item" href="{{ url_for('affiliation_detail', affiliation_id=item.id) }}">{{ item.name }} <span>{{ item.label }} | {{ item.id }}</span></a>
+      {% endif %}
+      {% else %}
+      <p class="muted">No recent visible changes.</p>
+      {% endfor %}
+    </div>
   </div>
 </section>
 {% endblock %}

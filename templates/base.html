@@ -15,16 +15,11 @@
       <nav>
         <a href="{{ url_for('dashboard') }}">Dashboard</a>
         {% if current_role == 'admin' %}
-        <div class="nav-group">
-          <span class="nav-group-title">Admin Options</span>
-          <a href="{{ url_for('admin_users') }}">User Management</a>
-          <a href="{{ url_for('admin_import') }}">Import JSON</a>
-          <a href="{{ url_for('admin_storage') }}">Storage</a>
-        </div>
+        <a href="{{ url_for('admin_options') }}" class="nav-button">Admin Options</a>
         {% endif %}
         <a href="{{ url_for('logout') }}">Logout</a>
       </nav>
-      <label class="theme-toggle"><input type="checkbox" id="themeToggle"> Dark mode</label>
+      <label class="toggle-row"><input type="checkbox" id="themeToggle"> <span>Dark mode</span></label>
       {% endif %}
     </aside>
     <main class="main">

@@ -4,7 +4,7 @@ import secrets
 import shutil
 import string
 from base64 import urlsafe_b64encode
-from datetime import date
+from datetime import date, datetime, timezone
 from hashlib import sha256
 from pathlib import Path
 
@@ -139,6 +139,7 @@ def tracker_default():
         "entry_levels": {"alters": {}, "locations": {}, "affiliations": {}},
         "relations": [],
         "location_bindings": {},
+        "last_modified": {"alters": {}, "locations": {}, "affiliations": {}},
         "relation_tags": list(DEFAULT_RELATION_TAGS),
         "special_relation_tags": dict(DEFAULT_SPECIAL_RELATION_TAGS),
         "alter_prefixes": list(DEFAULT_ALTER_PREFIXES),
@@ -248,7 +249,7 @@ def legacy_profile():
         "species": LEGACY_VALUE,
         "age": LEGACY_VALUE,
         "birthday_month": None,
-        "birthday_year": None,
+        "birthday_day": None,
         "birthday_last_processed_year": None,
         "gender": LEGACY_VALUE,
         "reproductive_organ": LEGACY_VALUE,
@@ -341,12 +342,13 @@ def normalize_status_entries(entries):
 
 def update_profile_birthday_age(profile):
     month = profile.get("birthday_month")
+    day = profile.get("birthday_day")
     age = profile.get("age")
-    if month is None or not isinstance(age, int):
+    if month is None or day is None or not isinstance(age, int):
         return False
     today = date.today()
     last_processed = profile.get("birthday_last_processed_year")
-    if (today.month, today.day) >= (month, 1) and last_processed != today.year:
+    if (today.month, today.day) >= (month, day) and last_processed != today.year:
         profile["age"] = age + 1
         profile["birthday_last_processed_year"] = today.year
         return True
@@ -370,6 +372,7 @@ def load_data(storage):
     data.setdefault("entry_levels", {"alters": {}, "locations": {}, "affiliations": {}})
     data.setdefault("relations", [])
     data.setdefault("location_bindings", {})
+    data.setdefault("last_modified", {"alters": {}, "locations": {}, "affiliations": {}})
     data.setdefault("relation_tags", list(DEFAULT_RELATION_TAGS))
     data.setdefault("special_relation_tags", dict(DEFAULT_SPECIAL_RELATION_TAGS))
     data.setdefault("alter_prefixes", list(DEFAULT_ALTER_PREFIXES))
@@ -379,6 +382,9 @@ def load_data(storage):
     data["entry_levels"].setdefault("alters", {})
     data["entry_levels"].setdefault("locations", {})
     data["entry_levels"].setdefault("affiliations", {})
+    data["last_modified"].setdefault("alters", {})
+    data["last_modified"].setdefault("locations", {})
+    data["last_modified"].setdefault("affiliations", {})
 
     data["relation_tags"] = unique_items(
         list(DEFAULT_RELATION_TAGS)
@@ -419,11 +425,24 @@ def load_data(storage):
         if alter_id not in data["entry_levels"]["alters"]:
             data["entry_levels"]["alters"][alter_id] = 3
             changed = True
+        if alter_id not in data["last_modified"]["alters"]:
+            data["last_modified"]["alters"][alter_id] = ""
+            changed = True
         profile = data["alter_profiles"].setdefault(alter_id, legacy_profile())
         for key, default_value in legacy_profile().items():
             if key not in profile:
                 profile[key] = default_value
                 changed = True
+        if profile.get("birthday_day") is None:
+            legacy_day = profile.get("birthday_year")
+            if isinstance(legacy_day, int) and 1 <= legacy_day <= 31:
+                profile["birthday_day"] = legacy_day
+            else:
+                profile["birthday_day"] = None
+            changed = True
+        if "birthday_year" in profile:
+            profile.pop("birthday_year", None)
+            changed = True
         profile["occupations"] = normalize_status_entries(profile.get("occupations"))
         profile["affiliations"] = normalize_status_entries(profile.get("affiliations"))
         profile["gallery"] = [item for item in profile.get("gallery", []) if str(item).strip()]
@@ -434,6 +453,9 @@ def load_data(storage):
         if location_id not in data["entry_levels"]["locations"]:
             data["entry_levels"]["locations"][location_id] = 3
             changed = True
+        if location_id not in data["last_modified"]["locations"]:
+            data["last_modified"]["locations"][location_id] = ""
+            changed = True
         if location_id not in data["location_galleries"]:
             data["location_galleries"][location_id] = []
             changed = True
@@ -443,6 +465,9 @@ def load_data(storage):
     for affiliation_id in data["affiliations"]:
         if affiliation_id not in data["entry_levels"]["affiliations"]:
             data["entry_levels"]["affiliations"][affiliation_id] = 3
+            changed = True
+        if affiliation_id not in data["last_modified"]["affiliations"]:
+            data["last_modified"]["affiliations"][affiliation_id] = ""
             changed = True
 
     if changed:
@@ -511,6 +536,21 @@ def get_affiliation_prefixes(data):
     return data["affiliation_prefixes"]
 
 
+def touch_entry(data, bucket_name, entry_id):
+    data.setdefault("last_modified", {"alters": {}, "locations": {}, "affiliations": {}})
+    data["last_modified"].setdefault(bucket_name, {})
+    data["last_modified"][bucket_name][entry_id] = datetime.now(timezone.utc).isoformat()
+
+
+def parse_timestamp(value):
+    if not value:
+        return datetime.fromtimestamp(0, tz=timezone.utc)
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return datetime.fromtimestamp(0, tz=timezone.utc)
+
+
 def create_entry(storage, bucket_name, entity_label, name, entry_id):
     return create_entry_with_level(storage, bucket_name, entity_label, name, entry_id, 3)
 
@@ -531,6 +571,7 @@ def create_entry_with_level(storage, bucket_name, entity_label, name, entry_id, 
         return False, "Entry level must be between 1 and 3."
     data[bucket_name][entry_id] = name
     data["entry_levels"][bucket_name][entry_id] = numeric_level
+    touch_entry(data, bucket_name, entry_id)
     if bucket_name == "alters":
         data["alter_profiles"].setdefault(entry_id, legacy_profile())
     save_data(storage, data)
@@ -553,6 +594,7 @@ def set_entry_level(storage, bucket_name, entry_id, level):
     if numeric_level < 1 or numeric_level > 3:
         return False, "Entry level must be between 1 and 3."
     data["entry_levels"][bucket_name][entry_id] = numeric_level
+    touch_entry(data, bucket_name, entry_id)
     save_data(storage, data)
     return True, f"Updated entry level to {numeric_level}."
 
@@ -591,6 +633,7 @@ def rename_entry(storage, bucket_name, entity_label, entry_id, name):
     if not name:
         return False, f"{entity_label.title()} name is required."
     data[bucket_name][entry_id] = name
+    touch_entry(data, bucket_name, entry_id)
     save_data(storage, data)
     return True, f"Renamed {entity_label}."
 
@@ -677,6 +720,8 @@ def bind_location(storage, alter_id, location_id):
     if alter_id not in data["alters"] or location_id not in data["locations"]:
         return False, "Alter and location IDs must exist."
     data["location_bindings"][alter_id] = location_id
+    touch_entry(data, "alters", alter_id)
+    touch_entry(data, "locations", location_id)
     save_data(storage, data)
     return True, "Updated location binding."
 
@@ -696,24 +741,28 @@ def save_alter_profile(storage, alter_id, form):
     else:
         profile["age"] = LEGACY_VALUE
     birthday_month = form.get("birthday_month", "")
-    birthday_year = form.get("birthday_year", "").strip()
-    if birthday_month and birthday_year:
-        if birthday_month not in MONTH_OPTIONS or not birthday_year.isdigit():
-            return False, "Birthday month/year is invalid."
+    birthday_day = form.get("birthday_day", "").strip()
+    if birthday_month and birthday_day:
+        if birthday_month not in MONTH_OPTIONS or not birthday_day.isdigit():
+            return False, "Birthday month/day is invalid."
         month = MONTH_OPTIONS.index(birthday_month) + 1
+        day = int(birthday_day)
+        if day < 1 or day > 31:
+            return False, "Birthday day must be between 1 and 31."
         profile["birthday_month"] = month
-        profile["birthday_year"] = int(birthday_year)
+        profile["birthday_day"] = day
         today = date.today()
-        profile["birthday_last_processed_year"] = today.year if (today.month, today.day) >= (month, 1) else today.year - 1
+        profile["birthday_last_processed_year"] = today.year if (today.month, today.day) >= (month, day) else today.year - 1
     else:
         profile["birthday_month"] = None
-        profile["birthday_year"] = None
+        profile["birthday_day"] = None
         profile["birthday_last_processed_year"] = None
     profile["gender"] = form.get("gender", "") or LEGACY_VALUE
     profile["reproductive_organ"] = form.get("reproductive_organ", "") or LEGACY_VALUE
     profile["sexual_romantic_attraction"] = form.get("attraction", "").strip() or LEGACY_VALUE
     profile["relationship_style"] = form.get("relationship_style", "") or LEGACY_VALUE
     profile["height"] = form.get("height", "").strip() or LEGACY_VALUE
+    touch_entry(data, "alters", alter_id)
     save_data(storage, data)
     return True, "Saved alter profile."
 
@@ -725,6 +774,8 @@ def update_affiliation_membership(storage, alter_id, affiliation_id, status):
     profile = data["alter_profiles"].setdefault(alter_id, legacy_profile())
     profile["affiliations"] = [item for item in profile["affiliations"] if item["value"] != affiliation_id]
     profile["affiliations"].append({"value": affiliation_id, "status": status if status in STATUS_OPTIONS else STATUS_OPTIONS[0]})
+    touch_entry(data, "alters", alter_id)
+    touch_entry(data, "affiliations", affiliation_id)
     save_data(storage, data)
     return True, "Updated affiliation membership."
 
@@ -736,6 +787,8 @@ def remove_affiliation_membership(storage, alter_id, affiliation_id):
     profile["affiliations"] = [item for item in profile["affiliations"] if item["value"] != affiliation_id]
     if len(profile["affiliations"]) == before:
         return False, "That affiliation is not assigned."
+    touch_entry(data, "alters", alter_id)
+    touch_entry(data, "affiliations", affiliation_id)
     save_data(storage, data)
     return True, "Removed affiliation membership."
 
@@ -750,6 +803,7 @@ def update_occupation_entry(storage, alter_id, occupation, status):
     data["alter_profiles"].setdefault(alter_id, legacy_profile())["occupations"].append(
         {"value": occupation, "status": status if status in STATUS_OPTIONS else STATUS_OPTIONS[0]}
     )
+    touch_entry(data, "alters", alter_id)
     save_data(storage, data)
     return True, "Added occupation/role."
 
@@ -761,6 +815,7 @@ def remove_occupation_entry(storage, alter_id, occupation):
     profile["occupations"] = [item for item in profile["occupations"] if item["value"] != occupation]
     if len(profile["occupations"]) == before:
         return False, "That occupation/role was not found."
+    touch_entry(data, "alters", alter_id)
     save_data(storage, data)
     return True, "Removed occupation/role."
 
@@ -797,6 +852,8 @@ def set_relation_tag(storage, first_id, tag, second_id):
         if {relation["source_id"], relation["target_id"]} != {str(first_id), str(second_id)}
     ]
     data["relations"].append(make_relation_record(data, first_id, tag, second_id))
+    touch_entry(data, "alters", first_id)
+    touch_entry(data, "alters", second_id)
     save_data(storage, data)
     return True, "Set relation tag."
 
@@ -810,6 +867,8 @@ def remove_relation(storage, first_id, relation_name, second_id):
         return False, "That relation does not exist."
     for relation in matches:
         data["relations"].remove(relation)
+    touch_entry(data, "alters", first_id)
+    touch_entry(data, "alters", second_id)
     save_data(storage, data)
     return True, "Removed relation."
 
@@ -830,6 +889,7 @@ def add_gallery_item(storage, kind, entry_id, image_url):
     if image_url in gallery:
         return False, "That image is already in the gallery."
     gallery.append(image_url)
+    touch_entry(data, "alters" if kind == "alter" else "locations", entry_id)
     save_data(storage, data)
     return True, "Added gallery image."
 
@@ -847,6 +907,7 @@ def remove_gallery_item(storage, kind, entry_id, image_url):
     if image_url not in gallery:
         return False, "That image was not found in the gallery."
     gallery.remove(image_url)
+    touch_entry(data, "alters" if kind == "alter" else "locations", entry_id)
     save_data(storage, data)
     return True, "Removed gallery image."
 
@@ -890,10 +951,10 @@ def format_aliases(profile):
 
 def birthday_summary(profile):
     month = profile.get("birthday_month")
-    year = profile.get("birthday_year")
-    if month is None or year in (None, ""):
+    day = profile.get("birthday_day")
+    if month is None or day in (None, ""):
         return LEGACY_VALUE
-    return f"{MONTH_OPTIONS[month - 1]} {year}"
+    return f"{MONTH_OPTIONS[month - 1]} {day}"
 
 
 def format_status_entries(entries):
@@ -916,6 +977,25 @@ def format_age(profile):
     return str(value) if isinstance(value, int) else value
 
 
+def build_recent_changes(data, user_level=4, limit=12):
+    recent = []
+    for kind, bucket_name, label in (("alter", "alters", "Alter"), ("location", "locations", "Location"), ("affiliation", "affiliations", "Affiliation")):
+        for entry_id, name in data[bucket_name].items():
+            if not entry_is_accessible(data, kind, entry_id, user_level):
+                continue
+            recent.append(
+                {
+                    "kind": kind,
+                    "label": label,
+                    "id": entry_id,
+                    "name": name,
+                    "timestamp": data.get("last_modified", {}).get(bucket_name, {}).get(entry_id, ""),
+                }
+            )
+    recent.sort(key=lambda item: parse_timestamp(item["timestamp"]), reverse=True)
+    return recent[:limit]
+
+
 def build_dashboard_context(data, user_level=4):
     alters = sorted(visible_entries(data, "alter", user_level), key=lambda item: item[1].casefold())
     locations = sorted(visible_entries(data, "location", user_level), key=lambda item: item[1].casefold())
@@ -932,7 +1012,14 @@ def build_dashboard_context(data, user_level=4):
             data["alters"].get(item["target_id"], "").casefold(),
         ),
     )
-    return {"alters": alters, "locations": locations, "affiliations": affiliations, "relations": relations, "tags": get_available_relation_tags(data)}
+    return {
+        "alters": alters,
+        "locations": locations,
+        "affiliations": affiliations,
+        "relations": relations,
+        "tags": get_available_relation_tags(data),
+        "recent_changes": build_recent_changes(data, user_level),
+    }
 
 
 def build_alter_view(data, alter_id, user_level=4):
