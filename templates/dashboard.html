@@ -3,7 +3,7 @@
 <section class="hero">
   <div>
     <h2>Dashboard</h2>
-    <p class="muted">Access is filtered by your user level. Creation tools only appear when your account can create records.</p>
+    <p class="muted">Creation tools only appear when your account can create records.</p>
   </div>
   <div class="counts">
     {% for key, value in counts.items() %}
@@ -19,9 +19,6 @@
     <form method="post" action="{{ url_for('create_record', kind='alter') }}" class="stack compact">
       <label>Alter name<input name="name" required></label>
       <label>Alter ID<input id="alter-entry-id" name="entry_id" placeholder="Leave blank to use generated or manual ID"></label>
-      <label>Access level
-        <select name="level">{% for level in entry_level_options %}{% if current_level == 4 or level <= current_level %}<option value="{{ level }}" {% if level == current_level or (current_level == 4 and level == 3) %}selected{% endif %}>Level {{ level }}</option>{% endif %}{% endfor %}</select>
-      </label>
       <button class="primary">Create Alter</button>
     </form>
     <form method="post" action="{{ url_for('generate_id', kind='alter') }}" class="stack compact top-gap inline-form-card" data-async="json" data-target="#alter-entry-id">
@@ -37,9 +34,6 @@
     <form method="post" action="{{ url_for('create_record', kind='location') }}" class="stack compact top-gap">
       <label>Location name<input name="name" required></label>
       <label>Location ID<input id="location-entry-id" name="entry_id" placeholder="Leave blank to use generated or manual ID"></label>
-      <label>Access level
-        <select name="level">{% for level in entry_level_options %}{% if current_level == 4 or level <= current_level %}<option value="{{ level }}" {% if level == current_level or (current_level == 4 and level == 3) %}selected{% endif %}>Level {{ level }}</option>{% endif %}{% endfor %}</select>
-      </label>
       <button class="primary">Create Location</button>
     </form>
     <form method="post" action="{{ url_for('generate_id', kind='location') }}" class="stack compact top-gap inline-form-card" data-async="json" data-target="#location-entry-id">
@@ -55,9 +49,6 @@
     <form method="post" action="{{ url_for('create_record', kind='affiliation') }}" class="stack compact top-gap">
       <label>Affiliation name<input name="name" required></label>
       <label>Affiliation ID<input id="affiliation-entry-id" name="entry_id" placeholder="Leave blank to auto-generate"></label>
-      <label>Access level
-        <select name="level">{% for level in entry_level_options %}{% if current_level == 4 or level <= current_level %}<option value="{{ level }}" {% if level == current_level or (current_level == 4 and level == 3) %}selected{% endif %}>Level {{ level }}</option>{% endif %}{% endfor %}</select>
-      </label>
       <button class="primary">Create Affiliation</button>
     </form>
     <form method="post" action="{{ url_for('generate_id', kind='affiliation') }}" class="stack compact top-gap inline-form-card" data-async="json" data-target="#affiliation-entry-id">
