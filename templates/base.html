@@ -22,10 +22,10 @@
       <label class="toggle-row"><input type="checkbox" id="themeToggle"> <span>Dark mode</span></label>
       {% endif %}
     </aside>
-    <main class="main">
+    <main class="main" id="mainContent">
       {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
-          <div class="flash-wrap">
+          <div class="flash-wrap" id="flashWrap">
             {% for category, message in messages %}
               <div class="flash {{ category }}">{{ message }}</div>
             {% endfor %}
@@ -47,6 +47,83 @@
         localStorage.setItem('uftd-theme', theme);
       });
     }
+
+    function renderFlash(message, category) {
+      let wrap = document.getElementById('flashWrap');
+      if (!wrap) {
+        wrap = document.createElement('div');
+        wrap.id = 'flashWrap';
+        wrap.className = 'flash-wrap';
+        const main = document.getElementById('mainContent');
+        main.prepend(wrap);
+      }
+      wrap.innerHTML = `<div class="flash ${category || 'success'}">${message}</div>`;
+    }
+
+    async function handleAsyncFormSubmit(form, submitter) {
+      const originalLabel = submitter ? submitter.textContent : '';
+      if (submitter) {
+        submitter.disabled = true;
+        submitter.textContent = 'Saving...';
+      }
+
+      const response = await fetch(form.action || window.location.href, {
+        method: (form.method || 'POST').toUpperCase(),
+        body: new FormData(form),
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        credentials: 'same-origin'
+      });
+
+      try {
+        const contentType = response.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+          const payload = await response.json();
+          renderFlash(payload.message || 'Done.', payload.category || (payload.ok ? 'success' : 'error'));
+          if (payload.generated_id) {
+            const targetSelector = form.dataset.target;
+            if (targetSelector) {
+              const input = document.querySelector(targetSelector);
+              if (input) {
+                input.value = payload.generated_id;
+                input.focus();
+                if (typeof input.select === 'function') {
+                  input.select();
+                }
+              }
+            }
+          }
+          return;
+        }
+
+        const html = await response.text();
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+        const newMain = doc.querySelector('.main');
+        const currentMain = document.querySelector('.main');
+        if (newMain && currentMain) {
+          currentMain.innerHTML = newMain.innerHTML;
+          if (response.url) {
+            window.history.replaceState({}, '', response.url);
+          }
+        }
+      } finally {
+        if (submitter) {
+          submitter.disabled = false;
+          submitter.textContent = originalLabel;
+        }
+      }
+    }
+
+    document.addEventListener('submit', (event) => {
+      const form = event.target;
+      if (!(form instanceof HTMLFormElement) || !form.dataset.async) {
+        return;
+      }
+      event.preventDefault();
+      handleAsyncFormSubmit(form, event.submitter || form.querySelector('[type="submit"]')).catch(() => {
+        renderFlash('That action failed to complete.', 'error');
+      });
+    });
   </script>
 </body>
 </html>

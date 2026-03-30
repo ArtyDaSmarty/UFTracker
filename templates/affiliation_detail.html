@@ -5,11 +5,11 @@
     <h2>{{ view.name }}</h2>
     <p class="muted">{{ view.id }} | Level {{ view.level }}</p>
     {% if can_create_records %}
-    <form method="post" action="{{ url_for('rename_record', kind='affiliation', entry_id=view.id) }}" class="stack compact">
+    <form method="post" action="{{ url_for('rename_record', kind='affiliation', entry_id=view.id) }}" class="stack compact" data-async="swap">
       <label>Affiliation name<input name="name" value="{{ view.name }}"></label>
       <button>Rename Affiliation</button>
     </form>
-    <form method="post" action="{{ url_for('update_record_level', kind='affiliation', entry_id=view.id) }}" class="stack compact top-gap">
+    <form method="post" action="{{ url_for('update_record_level', kind='affiliation', entry_id=view.id) }}" class="stack compact top-gap" data-async="swap">
       <label>Access level
         <select name="level">{% for level in entry_level_options %}{% if current_level == 4 or level <= current_level %}<option value="{{ level }}" {% if view.level == level %}selected{% endif %}>Level {{ level }}</option>{% endif %}{% endfor %}</select>
       </label>
