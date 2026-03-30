@@ -544,7 +544,7 @@ def load_data(storage):
         + list(data["special_relation_tags"].values())
     )
     data["alter_prefixes"] = unique_items(list(DEFAULT_ALTER_PREFIXES) + data["alter_prefixes"])
-    data["affiliation_prefixes"] = unique_items(list(DEFAULT_AFFILIATION_PREFIXES) + data["affiliation_prefixes"])
+    data["affiliation_prefixes"] = unique_items(data["affiliation_prefixes"])
 
     changed = False
     migrated_relations = []
@@ -857,8 +857,6 @@ def delete_affiliation_prefix(storage, prefix):
     prefix = prefix.strip()
     if prefix not in data["affiliation_prefixes"]:
         return False, "That affiliation prefix does not exist."
-    if len(data["affiliation_prefixes"]) == 1:
-        return False, "At least one affiliation prefix must remain."
     data["affiliation_prefixes"] = [item for item in data["affiliation_prefixes"] if item != prefix]
     save_data(storage, data)
     return True, f'Removed affiliation prefix "{prefix}".'
