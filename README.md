@@ -10,6 +10,9 @@ A Flask web app for tracking alters, locations, affiliations, relation tags, and
 - Separate creation permission for non-admin accounts
 - Level-based visibility for alters, locations, affiliations, and inquiries
 - Admin-only user management and JSON import
+- Admin-managed storage settings and data migration to S3
+- Gallery sections for alters and locations using image URLs
+- Admin removal of alter and affiliation prefixes
 - Optional S3-backed storage for all JSON data
 - Docker-ready deployment
 - Existing tracker data and saved hashes preserved
@@ -45,9 +48,11 @@ $env:S3_PREFIX="uftd"
 ```
 
 AWS credentials can be supplied through standard AWS environment variables or IAM role configuration.
+You can also configure backend, bucket, and prefix from the in-app Storage page, which saves settings to `storage_settings.json`.
 
 ## Data Files
 
 - `relationship_data.json`: tracker records
 - `saved_hashes.json`: reserved/generated IDs
 - `users.json`: login accounts and roles
+- `storage_settings.json`: saved storage backend settings
