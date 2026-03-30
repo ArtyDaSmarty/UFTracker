@@ -9,7 +9,6 @@ from werkzeug.utils import secure_filename
 
 from tracker_core import (
     DATA_FILE,
-    ENTRY_LEVEL_OPTIONS,
     GENDER_OPTIONS,
     HASH_FILE,
     LEGACY_VALUE,
@@ -22,13 +21,13 @@ from tracker_core import (
     StorageError,
     STORAGE_SETTINGS_FILE,
     USER_FILE,
-    USER_LEVEL_OPTIONS,
     add_gallery_item,
     bind_location,
     build_alter_view,
     build_affiliation_view,
     build_dashboard_context,
     build_location_view,
+    can_view_gallery_for_entry,
     create_entry_with_level,
     create_affiliation_prefix,
     create_alter_prefix,
@@ -70,13 +69,16 @@ from tracker_core import (
     save_uploaded_json,
     save_users,
     search_entries,
+    set_gallery_locked,
     set_relation_tag,
-    set_entry_level,
     update_memory_tree,
     update_notes,
     update_affiliation_membership,
     update_occupation_entry,
     user_can_create,
+    user_can_view_gallery,
+    user_can_view_locked_gallery,
+    user_can_view_memory,
 )
 
 
@@ -199,8 +201,7 @@ def current_user():
 
 
 def current_user_level():
-    user = current_user()
-    return int(user.get("level", 1)) if user else 0
+    return 0
 
 
 def can_manage_tracker():
@@ -253,12 +254,12 @@ def inject_globals():
     return {
         "current_user": user,
         "current_role": user["role"] if user else None,
-        "current_level": int(user.get("level", 1)) if user else None,
         "can_manage_tracker": can_manage_tracker(),
         "can_create_records": can_manage_tracker(),
+        "can_view_memory": user_can_view_memory(user),
+        "can_view_gallery": user_can_view_gallery(user),
+        "can_view_locked_gallery": user_can_view_locked_gallery(user),
         "status_options": STATUS_OPTIONS,
-        "user_level_options": USER_LEVEL_OPTIONS,
-        "entry_level_options": ENTRY_LEVEL_OPTIONS,
         "month_options": MONTH_OPTIONS,
         "gender_options": GENDER_OPTIONS,
         "organ_options": ORGAN_OPTIONS,
@@ -282,6 +283,9 @@ def index():
 def media_file(kind, entry_id, filename):
     if kind not in {"alter", "location"}:
         flash("Unknown media type.", "error")
+        return redirect(url_for("dashboard"))
+    if not can_view_gallery_for_entry(get_tracker_data(), current_user(), kind, entry_id):
+        flash("You do not have permission to view that locked gallery.", "error")
         return redirect(url_for("dashboard"))
     if not entry_is_accessible(get_tracker_data(), kind, entry_id, current_user_level()):
         flash("You do not have access to that media.", "error")
@@ -386,15 +390,15 @@ def register():
             flash("That username already exists.", "error")
             return redirect(url_for("register"))
 
-        level = 4 if not users_data["users"] else 1
-        role = "admin" if level == 4 else "user"
+        role = "admin" if not users_data["users"] else "user"
         user = {
             "id": os.urandom(12).hex(),
             "username": username,
             "password_hash": generate_password_hash(password),
-            "level": level,
             "role": role,
-            "creation_permission": level == 4,
+            "creation_permission": role == "admin",
+            "memory_tree_permission": role == "admin",
+            "locked_gallery_permission": role == "admin",
             "active": True,
         }
         users_data["users"].append(user)
@@ -487,17 +491,8 @@ def generate_id(kind):
 @tracker_write_required
 def create_record(kind):
     data = get_tracker_data()
-    user_level = current_user_level()
     name = request.form.get("name", "")
     entry_id = request.form.get("entry_id", "").strip()
-    level = request.form.get("level", "3")
-    try:
-        requested_level = int(level)
-    except ValueError:
-        requested_level = 3
-    if user_level < 4 and requested_level > user_level:
-        flash("You cannot create an entry above your own level.", "error")
-        return redirect(url_for("dashboard"))
     if kind == "alter" and not entry_id:
         entry_id = generate_unique_hash(storage, data["alter_prefixes"][0])
     elif kind == "location" and not entry_id:
@@ -505,7 +500,7 @@ def create_record(kind):
     elif kind == "affiliation" and not entry_id:
         entry_id = generate_unique_hash(storage, data["affiliation_prefixes"][0] if data["affiliation_prefixes"] else "")
     bucket_map = {"alter": ("alters", "alter"), "location": ("locations", "location"), "affiliation": ("affiliations", "affiliation")}
-    success, message = create_entry_with_level(storage, bucket_map[kind][0], bucket_map[kind][1], name, entry_id, level)
+    success, message = create_entry_with_level(storage, bucket_map[kind][0], bucket_map[kind][1], name, entry_id, None)
     flash(message, "success" if success else "error")
     return redirect(url_for("dashboard"))
 
@@ -570,11 +565,17 @@ def search():
 @app.route("/alter/<alter_id>")
 @login_required
 def alter_detail(alter_id):
-    view = build_alter_view(get_tracker_data(), alter_id, current_user_level())
+    data = get_tracker_data()
+    view = build_alter_view(data, alter_id, current_user_level())
     if not view:
         flash("Unknown or inaccessible alter.", "error")
         return redirect(url_for("dashboard"))
-    return render_template("alter_detail.html", view=view)
+    return render_template(
+        "alter_detail.html",
+        view=view,
+        can_view_memory=user_can_view_memory(current_user()),
+        can_view_gallery=can_view_gallery_for_entry(data, current_user(), "alter", alter_id),
+    )
 
 
 @app.route("/alter/<alter_id>/profile", methods=["POST"])
@@ -686,6 +687,9 @@ def bulk_relations(alter_id):
 @login_required
 @tracker_write_required
 def update_alter_memory(alter_id):
+    if not user_can_view_memory(current_user()):
+        flash("You do not have permission to view Memory Trees.", "error")
+        return redirect(url_for("alter_detail", alter_id=alter_id))
     if not entry_is_accessible(get_tracker_data(), "alter", alter_id, current_user_level()):
         flash("You do not have access to that alter.", "error")
         return redirect(url_for("dashboard"))
@@ -732,11 +736,16 @@ def update_alter_notes(alter_id):
 @app.route("/location/<location_id>")
 @login_required
 def location_detail(location_id):
-    view = build_location_view(get_tracker_data(), location_id, current_user_level())
+    data = get_tracker_data()
+    view = build_location_view(data, location_id, current_user_level())
     if not view:
         flash("Unknown or inaccessible location.", "error")
         return redirect(url_for("dashboard"))
-    return render_template("location_detail.html", view=view)
+    return render_template(
+        "location_detail.html",
+        view=view,
+        can_view_gallery=can_view_gallery_for_entry(data, current_user(), "location", location_id),
+    )
 
 
 @app.route("/gallery/<kind>/<entry_id>", methods=["POST"])
@@ -746,6 +755,11 @@ def update_gallery(kind, entry_id):
     if kind not in {"alter", "location"}:
         flash("Unsupported gallery type.", "error")
         return redirect(url_for("dashboard"))
+    if not can_view_gallery_for_entry(get_tracker_data(), current_user(), kind, entry_id):
+        flash("You do not have permission to view that locked gallery.", "error")
+        target = "alter_detail" if kind == "alter" else "location_detail"
+        arg_name = "alter_id" if kind == "alter" else "location_id"
+        return redirect(url_for(target, **{arg_name: entry_id}))
     if not entry_is_accessible(get_tracker_data(), kind, entry_id, current_user_level()):
         flash("You do not have access to that entry.", "error")
         return redirect(url_for("dashboard"))
@@ -786,6 +800,24 @@ def update_gallery(kind, entry_id):
     return redirect(url_for(target, **{arg_name: entry_id}))
 
 
+@app.route("/gallery-lock/<kind>/<entry_id>", methods=["POST"])
+@login_required
+@tracker_write_required
+def update_gallery_lock(kind, entry_id):
+    if kind not in {"alter", "location"}:
+        flash("Unsupported gallery type.", "error")
+        return redirect(url_for("dashboard"))
+    if not entry_is_accessible(get_tracker_data(), kind, entry_id, current_user_level()):
+        flash("You do not have access to that entry.", "error")
+        return redirect(url_for("dashboard"))
+    success, message = set_gallery_locked(storage, kind, entry_id, request.form.get("gallery_locked") == "on")
+    flash(message, "success" if success else "error")
+    clear_request_caches()
+    target = "alter_detail" if kind == "alter" else "location_detail"
+    arg_name = "alter_id" if kind == "alter" else "location_id"
+    return redirect(url_for(target, **{arg_name: entry_id}))
+
+
 @app.route("/affiliation/<affiliation_id>")
 @login_required
 def affiliation_detail(affiliation_id):
@@ -805,27 +837,6 @@ def rename_record(kind, entry_id):
         flash("You do not have access to that entry.", "error")
         return redirect(url_for("dashboard"))
     success, message = rename_entry(storage, bucket_map[kind][0], bucket_map[kind][1], entry_id, request.form.get("name", ""))
-    flash(message, "success" if success else "error")
-    clear_request_caches()
-    return redirect(request.referrer or url_for("dashboard"))
-
-
-@app.route("/entry-level/<kind>/<entry_id>", methods=["POST"])
-@login_required
-@tracker_write_required
-def update_record_level(kind, entry_id):
-    bucket_map = {"alter": "alters", "location": "locations", "affiliation": "affiliations"}
-    if not entry_is_accessible(get_tracker_data(), kind, entry_id, current_user_level()):
-        flash("You do not have access to that entry.", "error")
-        return redirect(url_for("dashboard"))
-    try:
-        requested_level = int(request.form.get("level", "3"))
-    except ValueError:
-        requested_level = 3
-    if current_user_level() < 4 and requested_level > current_user_level():
-        flash("You cannot assign an entry above your own level.", "error")
-        return redirect(request.referrer or url_for("dashboard"))
-    success, message = set_entry_level(storage, bucket_map[kind], entry_id, requested_level)
     flash(message, "success" if success else "error")
     clear_request_caches()
     return redirect(request.referrer or url_for("dashboard"))
@@ -860,19 +871,19 @@ def admin_users():
             if user["id"] != target_id:
                 continue
             action = request.form.get("action")
-            if action == "level" and int(user.get("level", 1)) != 4:
-                try:
-                    level = int(request.form.get("level", "1"))
-                except ValueError:
-                    level = 1
-                user["level"] = max(1, min(3, level))
-                user["role"] = "mod" if user["level"] == 3 else "user"
+            if action == "role" and user.get("role") != "admin":
+                role = request.form.get("role", "user").strip().lower()
+                user["role"] = role if role in {"user", "mod"} else "user"
             elif action == "password":
                 new_password = request.form.get("new_password", "")
                 if new_password:
                     user["password_hash"] = generate_password_hash(new_password)
-            elif action == "creation" and int(user.get("level", 1)) != 4:
+            elif action == "creation" and user.get("role") != "admin":
                 user["creation_permission"] = request.form.get("creation_permission") == "on"
+            elif action == "memory" and user.get("role") != "admin":
+                user["memory_tree_permission"] = request.form.get("memory_tree_permission") == "on"
+            elif action == "locked_gallery" and user.get("role") != "admin":
+                user["locked_gallery_permission"] = request.form.get("locked_gallery_permission") == "on"
             elif action == "active":
                 user["active"] = request.form.get("active") == "on"
         save_users(storage, users_data)
