@@ -556,10 +556,15 @@ def add_special_tag():
 @app.route("/search")
 @login_required
 def search():
-    kind = request.args.get("kind", "alter")
     query = request.args.get("q", "")
-    results = search_entries(get_tracker_data(), kind, query, current_user_level())
-    return render_template("search_results.html", kind=kind, query=query, results=results)
+    data = get_tracker_data()
+    grouped_results = {
+        "alters": search_entries(data, "alter", query, current_user_level()),
+        "locations": search_entries(data, "location", query, current_user_level()),
+        "affiliations": search_entries(data, "affiliation", query, current_user_level()),
+    }
+    total_results = sum(len(items) for items in grouped_results.values())
+    return render_template("search_results.html", query=query, grouped_results=grouped_results, total_results=total_results)
 
 
 @app.route("/alter/<alter_id>")
@@ -603,13 +608,9 @@ def update_alter_affiliations(alter_id):
     if not entry_is_accessible(data, "alter", alter_id, user_level):
         flash("You do not have access to that alter.", "error")
         return redirect(url_for("dashboard"))
-    status = request.form.get("status", "Current").strip()
-    is_independent = status.casefold() == "independent"
     affiliation_id = resolve_entry_reference(data, "affiliation", request.form.get("affiliation_id", ""), user_level)
-    if is_independent:
-        affiliation_id = ""
-        status = "Independent"
-    if not is_independent and affiliation_id and not entry_is_accessible(data, "affiliation", affiliation_id, user_level):
+    status = request.form.get("status", "Current")
+    if affiliation_id and not entry_is_accessible(data, "affiliation", affiliation_id, user_level):
         flash("You do not have access to that affiliation.", "error")
         return redirect(url_for("alter_detail", alter_id=alter_id))
     if request.form.get("action") == "remove":

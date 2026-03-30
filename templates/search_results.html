@@ -2,17 +2,33 @@
 {% block content %}
 <section class="card">
   <h2>Search Results</h2>
-  <p class="muted">{{ results|length }} visible result(s) for "{{ query }}" in {{ kind }}s.</p>
-  {% for entry_id, name in results %}
-    {% if kind == 'alter' %}
-      <a class="list-item" href="{{ url_for('alter_detail', alter_id=entry_id) }}">{{ name }} <span>{{ entry_id }}</span></a>
-    {% elif kind == 'location' %}
-      <a class="list-item" href="{{ url_for('location_detail', location_id=entry_id) }}">{{ name }} <span>{{ entry_id }}</span></a>
+  <p class="muted">{{ total_results }} visible result(s) for "{{ query }}".</p>
+
+  <div class="search-section top-gap">
+    <h3>Alters</h3>
+    {% for entry_id, name in grouped_results.alters %}
+    <a class="list-item" href="{{ url_for('alter_detail', alter_id=entry_id) }}">{{ name }} <span>{{ entry_id }}</span></a>
     {% else %}
-      <a class="list-item" href="{{ url_for('affiliation_detail', affiliation_id=entry_id) }}">{{ name }} <span>{{ entry_id }}</span></a>
-    {% endif %}
-  {% else %}
-    <p class="muted">No visible matches found.</p>
-  {% endfor %}
+    <p class="muted">No visible alter matches.</p>
+    {% endfor %}
+  </div>
+
+  <div class="search-section top-gap">
+    <h3>Locations</h3>
+    {% for entry_id, name in grouped_results.locations %}
+    <a class="list-item" href="{{ url_for('location_detail', location_id=entry_id) }}">{{ name }} <span>{{ entry_id }}</span></a>
+    {% else %}
+    <p class="muted">No visible location matches.</p>
+    {% endfor %}
+  </div>
+
+  <div class="search-section top-gap">
+    <h3>Affiliations</h3>
+    {% for entry_id, name in grouped_results.affiliations %}
+    <a class="list-item" href="{{ url_for('affiliation_detail', affiliation_id=entry_id) }}">{{ name }} <span>{{ entry_id }}</span></a>
+    {% else %}
+    <p class="muted">No visible affiliation matches.</p>
+    {% endfor %}
+  </div>
 </section>
 {% endblock %}
