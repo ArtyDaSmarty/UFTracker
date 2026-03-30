@@ -140,25 +140,6 @@
   </div>
 
   <div class="card">
-    <h3>Search and Inquiry</h3>
-    <form method="get" action="{{ url_for('search') }}" class="stack compact">
-      <label>Search alters<input name="q"></label>
-      <input type="hidden" name="kind" value="alter">
-      <button>Search Alters</button>
-    </form>
-    <form method="get" action="{{ url_for('search') }}" class="stack compact">
-      <label>Search locations<input name="q"></label>
-      <input type="hidden" name="kind" value="location">
-      <button>Search Locations</button>
-    </form>
-    <form method="get" action="{{ url_for('search') }}" class="stack compact">
-      <label>Search affiliations<input name="q"></label>
-      <input type="hidden" name="kind" value="affiliation">
-      <button>Search Affiliations</button>
-    </form>
-  </div>
-
-  <div class="card">
     <h3>Recently Made</h3>
     <div class="stack compact">
       {% for item in context.recent_changes %}
