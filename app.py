@@ -54,6 +54,8 @@ from tracker_core import (
     migrate_legacy_local_files,
     remove_affiliation_membership,
     remove_gallery_item,
+    remove_memory_entry,
+    remove_note_entry,
     remove_occupation_entry,
     remove_relation,
     resolve_entry_reference,
@@ -65,6 +67,8 @@ from tracker_core import (
     search_entries,
     set_relation_tag,
     set_entry_level,
+    update_memory_tree,
+    update_notes,
     update_affiliation_membership,
     update_occupation_entry,
     user_can_create,
@@ -578,6 +582,53 @@ def bulk_relations(alter_id):
             success, message = set_relation_tag(storage, alter_id, request.form.get(f"tag_{other_id}", ""), other_id)
         messages.append(message)
     flash(" | ".join(messages) if messages else "No alters selected.", "success" if messages else "error")
+    clear_request_caches()
+    return redirect(url_for("alter_detail", alter_id=alter_id))
+
+
+@app.route("/alter/<alter_id>/memory", methods=["POST"])
+@login_required
+@tracker_write_required
+def update_alter_memory(alter_id):
+    if not entry_is_accessible(get_tracker_data(), "alter", alter_id, current_user_level()):
+        flash("You do not have access to that alter.", "error")
+        return redirect(url_for("dashboard"))
+    era = request.form.get("era", "")
+    entry_id = request.form.get("entry_id", "").strip()
+    if request.form.get("action") == "remove":
+        success, message = remove_memory_entry(storage, alter_id, era, entry_id)
+    else:
+        success, message = update_memory_tree(
+            storage,
+            alter_id,
+            era,
+            request.form.get("memory_date", ""),
+            request.form.get("memory_text", ""),
+            request.form.getlist("ordered_ids"),
+        )
+    flash(message, "success" if success else "error")
+    clear_request_caches()
+    return redirect(url_for("alter_detail", alter_id=alter_id))
+
+
+@app.route("/alter/<alter_id>/notes", methods=["POST"])
+@login_required
+@tracker_write_required
+def update_alter_notes(alter_id):
+    if not entry_is_accessible(get_tracker_data(), "alter", alter_id, current_user_level()):
+        flash("You do not have access to that alter.", "error")
+        return redirect(url_for("dashboard"))
+    entry_id = request.form.get("entry_id", "").strip()
+    if request.form.get("action") == "remove":
+        success, message = remove_note_entry(storage, alter_id, entry_id)
+    else:
+        success, message = update_notes(
+            storage,
+            alter_id,
+            request.form.get("note_text", ""),
+            request.form.getlist("ordered_note_ids"),
+        )
+    flash(message, "success" if success else "error")
     clear_request_caches()
     return redirect(url_for("alter_detail", alter_id=alter_id))
 
