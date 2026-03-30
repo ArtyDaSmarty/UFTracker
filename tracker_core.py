@@ -42,7 +42,7 @@ DEFAULT_ALTER_PREFIXES = ["UFA-"]
 DEFAULT_AFFILIATION_PREFIXES = ["AFF-"]
 LOCATION_PREFIX = "LOC-"
 LEGACY_VALUE = "LEGACY"
-STATUS_OPTIONS = ["Current", "Formerly"]
+STATUS_OPTIONS = ["Current", "Formerly", "Independent"]
 ROLE_OPTIONS = ["user", "mod", "admin"]
 USER_LEVEL_OPTIONS = [1, 2, 3, 4]
 ENTRY_LEVEL_OPTIONS = [1, 2, 3]
@@ -419,6 +419,8 @@ def legacy_profile():
         "height": LEGACY_VALUE,
         "occupations": [],
         "affiliations": [],
+        "memory_tree": {"pre_systemhood": [], "current": []},
+        "notes": [],
         "gallery": [],
     }
 
@@ -505,6 +507,27 @@ def normalize_status_entries(entries):
         status = str(item.get("status", STATUS_OPTIONS[0])).strip()
         if value:
             normalized.append({"value": value, "status": status if status in STATUS_OPTIONS else STATUS_OPTIONS[0]})
+    return normalized
+
+
+def normalize_memory_entries(entries):
+    normalized = []
+    for item in entries or []:
+        entry_id = str(item.get("id", "")).strip() or secrets.token_hex(8)
+        when = str(item.get("date", "")).strip()
+        text = str(item.get("text", "")).strip()
+        if when or text:
+            normalized.append({"id": entry_id, "date": when, "text": text})
+    return normalized
+
+
+def normalize_notes(entries):
+    normalized = []
+    for item in entries or []:
+        entry_id = str(item.get("id", "")).strip() or secrets.token_hex(8)
+        text = str(item.get("text", "")).strip()
+        if text:
+            normalized.append({"id": entry_id, "text": text})
     return normalized
 
 
@@ -617,6 +640,12 @@ def load_data(storage):
             changed = True
         profile["occupations"] = normalize_status_entries(profile.get("occupations"))
         profile["affiliations"] = normalize_status_entries(profile.get("affiliations"))
+        memory_tree = profile.get("memory_tree", {})
+        profile["memory_tree"] = {
+            "pre_systemhood": normalize_memory_entries(memory_tree.get("pre_systemhood", [])),
+            "current": normalize_memory_entries(memory_tree.get("current", [])),
+        }
+        profile["notes"] = normalize_notes(profile.get("notes", []))
         profile["gallery"] = [item for item in profile.get("gallery", []) if str(item).strip()]
         if update_profile_birthday_age(profile):
             changed = True
@@ -798,6 +827,27 @@ def visible_entries(data, kind, user_level):
         for entry_id, name in data[bucket_name].items()
         if entry_is_accessible(data, kind, entry_id, user_level)
     ]
+
+
+def resolve_entry_reference(data, kind, raw_value, user_level=4):
+    raw_value = str(raw_value or "").strip()
+    if not raw_value:
+        return ""
+    if entry_is_accessible(data, kind, raw_value, user_level):
+        return raw_value
+    match = raw_value.rsplit("(", 1)
+    if len(match) == 2 and match[1].endswith(")"):
+        candidate_id = match[1][:-1].strip()
+        if entry_is_accessible(data, kind, candidate_id, user_level):
+            return candidate_id
+    visible = visible_entries(data, kind, user_level)
+    exact_name_matches = [entry_id for entry_id, name in visible if name.casefold() == raw_value.casefold()]
+    if len(exact_name_matches) == 1:
+        return exact_name_matches[0]
+    partial_matches = [entry_id for entry_id, name in visible if raw_value.casefold() in name.casefold()]
+    if len(partial_matches) == 1:
+        return partial_matches[0]
+    return raw_value
 
 
 def rename_entry(storage, bucket_name, entity_label, entry_id, name):
@@ -994,6 +1044,79 @@ def remove_occupation_entry(storage, alter_id, occupation):
     touch_entry(data, "alters", alter_id)
     save_data(storage, data)
     return True, "Removed occupation/role."
+
+
+def update_memory_tree(storage, alter_id, era, date_text, note_text, order_ids=None):
+    data = load_data(storage)
+    if alter_id not in data["alters"]:
+        return False, "Unknown alter."
+    if era not in {"pre_systemhood", "current"}:
+        return False, "Unknown memory section."
+    profile = data["alter_profiles"].setdefault(alter_id, legacy_profile())
+    memory_tree = profile.setdefault("memory_tree", {"pre_systemhood": [], "current": []})
+    entries = normalize_memory_entries(memory_tree.get(era, []))
+    date_text = str(date_text or "").strip()
+    note_text = str(note_text or "").strip()
+    if date_text or note_text:
+        entries.append({"id": secrets.token_hex(8), "date": date_text, "text": note_text})
+    if order_ids:
+        order_lookup = {item["id"]: index for index, item in enumerate(order_ids)}
+        entries.sort(key=lambda item: (order_lookup.get(item["id"], len(order_lookup)), item["id"]))
+    memory_tree[era] = entries
+    touch_entry(data, "alters", alter_id)
+    save_data(storage, data)
+    return True, "Updated memory tree."
+
+
+def remove_memory_entry(storage, alter_id, era, entry_id):
+    data = load_data(storage)
+    if alter_id not in data["alters"]:
+        return False, "Unknown alter."
+    if era not in {"pre_systemhood", "current"}:
+        return False, "Unknown memory section."
+    profile = data["alter_profiles"].setdefault(alter_id, legacy_profile())
+    memory_tree = profile.setdefault("memory_tree", {"pre_systemhood": [], "current": []})
+    entries = normalize_memory_entries(memory_tree.get(era, []))
+    updated = [item for item in entries if item["id"] != entry_id]
+    if len(updated) == len(entries):
+        return False, "That memory entry was not found."
+    memory_tree[era] = updated
+    touch_entry(data, "alters", alter_id)
+    save_data(storage, data)
+    return True, "Removed memory entry."
+
+
+def update_notes(storage, alter_id, note_text, order_ids=None):
+    data = load_data(storage)
+    if alter_id not in data["alters"]:
+        return False, "Unknown alter."
+    profile = data["alter_profiles"].setdefault(alter_id, legacy_profile())
+    notes = normalize_notes(profile.get("notes", []))
+    note_text = str(note_text or "").strip()
+    if note_text:
+        notes.append({"id": secrets.token_hex(8), "text": note_text})
+    if order_ids:
+        order_lookup = {item["id"]: index for index, item in enumerate(order_ids)}
+        notes.sort(key=lambda item: (order_lookup.get(item["id"], len(order_lookup)), item["id"]))
+    profile["notes"] = notes
+    touch_entry(data, "alters", alter_id)
+    save_data(storage, data)
+    return True, "Updated notes."
+
+
+def remove_note_entry(storage, alter_id, entry_id):
+    data = load_data(storage)
+    if alter_id not in data["alters"]:
+        return False, "Unknown alter."
+    profile = data["alter_profiles"].setdefault(alter_id, legacy_profile())
+    notes = normalize_notes(profile.get("notes", []))
+    updated = [item for item in notes if item["id"] != entry_id]
+    if len(updated) == len(notes):
+        return False, "That note was not found."
+    profile["notes"] = updated
+    touch_entry(data, "alters", alter_id)
+    save_data(storage, data)
+    return True, "Removed note."
 
 
 def make_relation_record(data, first_id, tag, second_id, legacy_relation=None):
@@ -1276,6 +1399,7 @@ def build_alter_view(data, alter_id, user_level=4):
         bulk_rows.append({"id": other_id, "name": name, "current_tag": current_tag or "NONE"})
     visible_affiliations = sorted(visible_entries(data, "affiliation", user_level), key=lambda item: item[1].casefold())
     visible_affiliation_ids = {entry_id for entry_id, _ in visible_affiliations}
+    visible_locations = sorted(visible_entries(data, "location", user_level), key=lambda item: item[1].casefold())
     visible_location_id = data["location_bindings"].get(alter_id, "")
     if visible_location_id and not entry_is_accessible(data, "location", visible_location_id, user_level):
         visible_location_id = ""
@@ -1303,7 +1427,10 @@ def build_alter_view(data, alter_id, user_level=4):
         "relations": sorted(relations, key=lambda item: (item["label"].casefold(), item["other_name"].casefold())),
         "relation_tags": get_available_relation_tags(data),
         "affiliations": visible_affiliations,
+        "locations": visible_locations,
         "bulk_rows": bulk_rows,
+        "memory_tree": profile.get("memory_tree", {"pre_systemhood": [], "current": []}),
+        "notes": profile.get("notes", []),
         "gallery": list(profile.get("gallery", [])),
     }
 
