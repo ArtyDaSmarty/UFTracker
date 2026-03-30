@@ -1,5 +1,6 @@
 import json
 import secrets
+import shutil
 import string
 from datetime import date
 from pathlib import Path
@@ -158,6 +159,18 @@ def save_storage_settings(root, settings):
     payload.update({key: settings.get(key, value) for key, value in payload.items()})
     with path.open("w", encoding="utf-8") as file:
         json.dump(payload, file, indent=2)
+
+
+def migrate_legacy_local_files(source_root, destination_root):
+    source_root = Path(source_root)
+    destination_root = Path(destination_root)
+    destination_root.mkdir(parents=True, exist_ok=True)
+    filenames = [DATA_FILE, HASH_FILE, USER_FILE, STORAGE_SETTINGS_FILE]
+    for filename in filenames:
+        source_path = source_root / filename
+        destination_path = destination_root / filename
+        if source_path.exists() and not destination_path.exists():
+            shutil.move(str(source_path), str(destination_path))
 
 
 def ensure_storage_files(storage):
