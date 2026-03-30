@@ -111,6 +111,9 @@ class LocalStorage:
             return []
         return [str(path.relative_to(self.root)).replace("\\", "/") for path in root.rglob("*") if path.is_file()]
 
+    def get_download_url(self, name, expires_in=300):
+        return None
+
 
 class S3Storage:
     def __init__(self, bucket, prefix="", endpoint="", region="", access_key="", secret_key="", path_style=False):
@@ -179,6 +182,16 @@ class S3Storage:
                     key = key[len(self.prefix) + 1 :]
                 keys.append(key)
         return keys
+
+    def get_download_url(self, name, expires_in=300):
+        try:
+            return self.client.generate_presigned_url(
+                "get_object",
+                Params={"Bucket": self.bucket, "Key": self._key(name)},
+                ExpiresIn=expires_in,
+            )
+        except (ClientError, BotoCoreError):
+            return None
 
 
 def get_storage(root):
