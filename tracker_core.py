@@ -39,7 +39,7 @@ DEFAULT_ALTER_PREFIXES = ["UFA-"]
 DEFAULT_AFFILIATION_PREFIXES = ["AFF-"]
 LOCATION_PREFIX = "LOC-"
 LEGACY_VALUE = "LEGACY"
-STATUS_OPTIONS = ["Current", "Formerly"]
+STATUS_OPTIONS = ["Current", "Formerly", "Independent"]
 ROLE_OPTIONS = ["user", "mod", "admin"]
 USER_LEVEL_OPTIONS = [1, 2, 3, 4]
 ENTRY_LEVEL_OPTIONS = [1, 2, 3]
@@ -723,6 +723,27 @@ def visible_entries(data, kind, user_level):
     ]
 
 
+def resolve_entry_reference(data, kind, raw_value, user_level=4):
+    raw_value = str(raw_value or "").strip()
+    if not raw_value:
+        return ""
+    if entry_is_accessible(data, kind, raw_value, user_level):
+        return raw_value
+    match = raw_value.rsplit("(", 1)
+    if len(match) == 2 and match[1].endswith(")"):
+        candidate_id = match[1][:-1].strip()
+        if entry_is_accessible(data, kind, candidate_id, user_level):
+            return candidate_id
+    visible = visible_entries(data, kind, user_level)
+    exact_name_matches = [entry_id for entry_id, name in visible if name.casefold() == raw_value.casefold()]
+    if len(exact_name_matches) == 1:
+        return exact_name_matches[0]
+    partial_matches = [entry_id for entry_id, name in visible if raw_value.casefold() in name.casefold()]
+    if len(partial_matches) == 1:
+        return partial_matches[0]
+    return raw_value
+
+
 def rename_entry(storage, bucket_name, entity_label, entry_id, name):
     data = load_data(storage)
     if entry_id not in data[bucket_name]:
@@ -1199,6 +1220,7 @@ def build_alter_view(data, alter_id, user_level=4):
         bulk_rows.append({"id": other_id, "name": name, "current_tag": current_tag or "NONE"})
     visible_affiliations = sorted(visible_entries(data, "affiliation", user_level), key=lambda item: item[1].casefold())
     visible_affiliation_ids = {entry_id for entry_id, _ in visible_affiliations}
+    visible_locations = sorted(visible_entries(data, "location", user_level), key=lambda item: item[1].casefold())
     visible_location_id = data["location_bindings"].get(alter_id, "")
     if visible_location_id and not entry_is_accessible(data, "location", visible_location_id, user_level):
         visible_location_id = ""
@@ -1226,6 +1248,7 @@ def build_alter_view(data, alter_id, user_level=4):
         "relations": sorted(relations, key=lambda item: (item["label"].casefold(), item["other_name"].casefold())),
         "relation_tags": get_available_relation_tags(data),
         "affiliations": visible_affiliations,
+        "locations": visible_locations,
         "bulk_rows": bulk_rows,
         "gallery": list(profile.get("gallery", [])),
     }
