@@ -58,7 +58,10 @@ button.primary:hover, .button-link:hover { background: var(--accent-2); }
 .muted, .small { color: var(--muted); }
 .auth-card { max-width: 420px; margin: 60px auto; }
 .kv { display: flex; justify-content: space-between; gap: 16px; padding: 10px 0; border-bottom: 1px solid var(--line); }
-.bulk-row { display: grid; grid-template-columns: 1fr 180px; gap: 12px; align-items: center; }
+.bulk-row { display: grid; grid-template-columns: minmax(0, 1fr) 190px; gap: 12px; align-items: center; padding: 10px 12px; border: 1px solid var(--line); border-radius: 14px; background: color-mix(in srgb, var(--card) 84%, var(--sidebar)); }
+.bulk-row-label { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.bulk-row-label span { overflow-wrap: anywhere; word-break: break-word; }
+.bulk-row-label input { width: 18px; min-width: 18px; height: 18px; padding: 0; margin: 0; }
 .bordered { border: 1px solid var(--line); border-radius: 16px; padding: 14px; margin-bottom: 12px; }
 .toggle-row { display: inline-flex; gap: 10px; align-items: center; margin-top: 14px; }
 .toggle-row input { width: 18px; height: 18px; padding: 0; margin: 0; }
@@ -80,6 +83,7 @@ button.primary:hover, .button-link:hover { background: var(--accent-2); }
 @media (max-width: 1200px) {
   .cols-5, .cols-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .cols-4, .cols-2 { grid-template-columns: 1fr; }
+  .bulk-row { grid-template-columns: 1fr; }
 }
 @media (max-width: 900px) {
   .shell { grid-template-columns: 1fr; }
