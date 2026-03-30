@@ -1,8 +1,9 @@
 import os
 from pathlib import Path
 
-from flask import Flask, flash, redirect, render_template, request, session, url_for
+from flask import Flask, flash, redirect, render_template, request, send_from_directory, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
+from werkzeug.utils import secure_filename
 
 from tracker_core import (
     DATA_FILE,
@@ -63,7 +64,9 @@ from tracker_core import (
 
 APP_DIR = Path(__file__).resolve().parent
 DATA_DIR = Path(os.getenv("DATA_DIR", str(APP_DIR / "data"))).resolve()
+UPLOADS_DIR = DATA_DIR / "uploads"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
+UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 migrate_legacy_local_files(APP_DIR, DATA_DIR)
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "change-me-for-production")
@@ -76,6 +79,40 @@ def refresh_storage():
     storage = get_storage(DATA_DIR)
     ensure_storage_files(storage)
     return storage
+
+
+def gallery_upload_dir(kind, entry_id):
+    target = UPLOADS_DIR / kind / entry_id
+    target.mkdir(parents=True, exist_ok=True)
+    return target
+
+
+def save_gallery_upload(kind, entry_id, file_storage):
+    if not file_storage or not file_storage.filename:
+        return ""
+    suffix = Path(secure_filename(file_storage.filename)).suffix.lower()
+    if suffix not in {".jpg", ".jpeg", ".png", ".gif", ".webp"}:
+        raise ValueError("Uploads must be JPG, PNG, GIF, or WEBP.")
+    filename = f"{os.urandom(12).hex()}{suffix}"
+    target = gallery_upload_dir(kind, entry_id) / filename
+    file_storage.save(target)
+    return url_for("media_file", kind=kind, entry_id=entry_id, filename=filename)
+
+
+def delete_gallery_upload(image_url):
+    media_prefix = "/media/"
+    if not image_url.startswith(media_prefix):
+        return
+    parts = image_url.removeprefix(media_prefix).split("/", 2)
+    if len(parts) != 3:
+        return
+    kind, entry_id, filename = parts
+    target = gallery_upload_dir(kind, entry_id) / filename
+    try:
+        if target.exists():
+            target.unlink()
+    except OSError:
+        pass
 
 
 def current_user():
@@ -160,6 +197,18 @@ def inject_globals():
 @app.route("/")
 def index():
     return redirect(url_for("dashboard" if current_user() else "login"))
+
+
+@app.route("/media/<kind>/<entry_id>/<path:filename>")
+@login_required
+def media_file(kind, entry_id, filename):
+    if kind not in {"alter", "location"}:
+        flash("Unknown media type.", "error")
+        return redirect(url_for("dashboard"))
+    if not entry_is_accessible(load_data(storage), kind, entry_id, current_user_level()):
+        flash("You do not have access to that media.", "error")
+        return redirect(url_for("dashboard"))
+    return send_from_directory(gallery_upload_dir(kind, entry_id), filename)
 
 
 @app.route("/admin")
@@ -478,11 +527,26 @@ def update_gallery(kind, entry_id):
         flash("You do not have access to that entry.", "error")
         return redirect(url_for("dashboard"))
     image_url = request.form.get("image_url", "").strip()
+    uploaded_file = request.files.get("image_file")
     action = request.form.get("action", "add")
     if action == "remove":
         success, message = remove_gallery_item(storage, kind, entry_id, image_url)
+        if success:
+            delete_gallery_upload(image_url)
     else:
+        uploaded_image_url = ""
+        if uploaded_file and uploaded_file.filename:
+            try:
+                uploaded_image_url = save_gallery_upload(kind, entry_id, uploaded_file)
+                image_url = uploaded_image_url
+            except ValueError as error:
+                flash(str(error), "error")
+                target = "alter_detail" if kind == "alter" else "location_detail"
+                arg_name = "alter_id" if kind == "alter" else "location_id"
+                return redirect(url_for(target, **{arg_name: entry_id}))
         success, message = add_gallery_item(storage, kind, entry_id, image_url)
+        if not success and uploaded_image_url:
+            delete_gallery_upload(uploaded_image_url)
     flash(message, "success" if success else "error")
     target = "alter_detail" if kind == "alter" else "location_detail"
     arg_name = "alter_id" if kind == "alter" else "location_id"
