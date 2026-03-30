@@ -313,7 +313,7 @@ def index():
 @app.route("/media/<kind>/<entry_id>/<path:filename>")
 @login_required
 def media_file(kind, entry_id, filename):
-    if kind not in {"alter", "location"}:
+    if kind not in {"alter", "location", "affiliation"}:
         flash("Unknown media type.", "error")
         return redirect(url_for("dashboard"))
     if not can_view_gallery_for_entry(get_tracker_data(), current_user(), kind, entry_id):
@@ -399,6 +399,8 @@ def admin_entries():
             gallery_urls = list(data.get("alter_profiles", {}).get(entry_id, {}).get("gallery", []))
         elif kind == "location":
             gallery_urls = list(data.get("location_galleries", {}).get(entry_id, []))
+        elif kind == "affiliation":
+            gallery_urls = list(data.get("affiliation_records", {}).get(entry_id, {}).get("gallery", []))
         success, message = delete_entry(storage, kind, entry_id)
         if success:
             for image_url in gallery_urls:
@@ -810,13 +812,13 @@ def location_detail(location_id):
 @login_required
 @tracker_write_required
 def update_gallery(kind, entry_id):
-    if kind not in {"alter", "location"}:
+    if kind not in {"alter", "location", "affiliation"}:
         flash("Unsupported gallery type.", "error")
         return redirect(url_for("dashboard"))
     if not can_view_gallery_for_entry(get_tracker_data(), current_user(), kind, entry_id):
         flash("You do not have permission to view that locked gallery.", "error")
-        target = "alter_detail" if kind == "alter" else "location_detail"
-        arg_name = "alter_id" if kind == "alter" else "location_id"
+        target = "alter_detail" if kind == "alter" else "location_detail" if kind == "location" else "affiliation_detail"
+        arg_name = "alter_id" if kind == "alter" else "location_id" if kind == "location" else "affiliation_id"
         return redirect(url_for(target, **{arg_name: entry_id}))
     if not entry_is_accessible(get_tracker_data(), kind, entry_id, current_user_level()):
         flash("You do not have access to that entry.", "error")
@@ -836,8 +838,8 @@ def update_gallery(kind, entry_id):
                 image_url = uploaded_image_url
             except ValueError as error:
                 flash(str(error), "error")
-                target = "alter_detail" if kind == "alter" else "location_detail"
-                arg_name = "alter_id" if kind == "alter" else "location_id"
+                target = "alter_detail" if kind == "alter" else "location_detail" if kind == "location" else "affiliation_detail"
+                arg_name = "alter_id" if kind == "alter" else "location_id" if kind == "location" else "affiliation_id"
                 return redirect(url_for(target, **{arg_name: entry_id}))
         if image_url and not is_managed_media_url(image_url):
             success, managed_image_url = import_gallery_media_from_url(storage, kind, entry_id, image_url)
@@ -845,16 +847,16 @@ def update_gallery(kind, entry_id):
                 image_url = managed_image_url
             else:
                 flash(managed_image_url, "error")
-                target = "alter_detail" if kind == "alter" else "location_detail"
-                arg_name = "alter_id" if kind == "alter" else "location_id"
+                target = "alter_detail" if kind == "alter" else "location_detail" if kind == "location" else "affiliation_detail"
+                arg_name = "alter_id" if kind == "alter" else "location_id" if kind == "location" else "affiliation_id"
                 return redirect(url_for(target, **{arg_name: entry_id}))
         success, message = add_gallery_item(storage, kind, entry_id, image_url)
         if not success and uploaded_image_url:
             delete_gallery_upload(uploaded_image_url)
     flash(message, "success" if success else "error")
     clear_request_caches()
-    target = "alter_detail" if kind == "alter" else "location_detail"
-    arg_name = "alter_id" if kind == "alter" else "location_id"
+    target = "alter_detail" if kind == "alter" else "location_detail" if kind == "location" else "affiliation_detail"
+    arg_name = "alter_id" if kind == "alter" else "location_id" if kind == "location" else "affiliation_id"
     return redirect(url_for(target, **{arg_name: entry_id}))
 
 
@@ -862,7 +864,7 @@ def update_gallery(kind, entry_id):
 @login_required
 @tracker_write_required
 def update_gallery_lock(kind, entry_id):
-    if kind not in {"alter", "location"}:
+    if kind not in {"alter", "location", "affiliation"}:
         flash("Unsupported gallery type.", "error")
         return redirect(url_for("dashboard"))
     if not entry_is_accessible(get_tracker_data(), kind, entry_id, current_user_level()):
@@ -871,8 +873,8 @@ def update_gallery_lock(kind, entry_id):
     success, message = set_gallery_locked(storage, kind, entry_id, request.form.get("gallery_locked") == "on")
     flash(message, "success" if success else "error")
     clear_request_caches()
-    target = "alter_detail" if kind == "alter" else "location_detail"
-    arg_name = "alter_id" if kind == "alter" else "location_id"
+    target = "alter_detail" if kind == "alter" else "location_detail" if kind == "location" else "affiliation_detail"
+    arg_name = "alter_id" if kind == "alter" else "location_id" if kind == "location" else "affiliation_id"
     return redirect(url_for(target, **{arg_name: entry_id}))
 
 
@@ -897,11 +899,17 @@ def update_alter_lock(section, alter_id):
 @app.route("/affiliation/<affiliation_id>")
 @login_required
 def affiliation_detail(affiliation_id):
-    view = build_affiliation_view(get_tracker_data(), affiliation_id, current_user_level())
+    data = get_tracker_data()
+    view = build_affiliation_view(data, affiliation_id, current_user_level())
     if not view:
         flash("Unknown or inaccessible affiliation.", "error")
         return redirect(url_for("dashboard"))
-    return render_template("affiliation_detail.html", view=view, can_view_memory=user_can_view_memory(current_user()))
+    return render_template(
+        "affiliation_detail.html",
+        view=view,
+        can_view_memory=user_can_view_memory(current_user()),
+        can_view_gallery=can_view_gallery_for_entry(data, current_user(), "affiliation", affiliation_id),
+    )
 
 
 @app.route("/affiliation/<affiliation_id>/summary", methods=["POST"])
