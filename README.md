@@ -32,6 +32,8 @@ docker build -t uftd .
 docker run -p 8000:8000 -e SECRET_KEY=change-me uftd
 ```
 
+The container now binds Gunicorn to the runtime `PORT` environment variable, which is required by many hosted container platforms.
+
 ## S3 Storage
 
 Set these environment variables to move all JSON-backed data into S3:
