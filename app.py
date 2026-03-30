@@ -162,6 +162,13 @@ def index():
     return redirect(url_for("dashboard" if current_user() else "login"))
 
 
+@app.route("/admin")
+@login_required
+@roles_required("admin")
+def admin_options():
+    return render_template("admin_options.html")
+
+
 @app.route("/register", methods=["GET", "POST"])
 def register():
     users_data = load_users(storage)
@@ -236,6 +243,29 @@ def dashboard():
         alter_prefixes=get_alter_prefixes(data),
         affiliation_prefixes=get_affiliation_prefixes(data),
     )
+
+
+@app.route("/generate-id/<kind>", methods=["POST"])
+@login_required
+@tracker_write_required
+def generate_id(kind):
+    data = load_data(storage)
+    prefix = request.form.get("prefix", "")
+    if kind == "alter":
+        if prefix and prefix not in get_alter_prefixes(data):
+            flash("Unknown alter prefix.", "error")
+            return redirect(url_for("dashboard"))
+    elif kind == "location":
+        prefix = LOCATION_PREFIX if prefix != "" else ""
+    elif kind == "affiliation":
+        if prefix and prefix not in get_affiliation_prefixes(data):
+            flash("Unknown affiliation prefix.", "error")
+            return redirect(url_for("dashboard"))
+    else:
+        flash("Unknown ID type.", "error")
+        return redirect(url_for("dashboard"))
+    flash(f"Generated ID: {generate_unique_hash(storage, prefix)}", "success")
+    return redirect(url_for("dashboard"))
 
 
 @app.route("/create/<kind>", methods=["POST"])
