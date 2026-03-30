@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+  <div>
+    <h2>{{ view.name }}</h2>
+    <p class="muted">{{ view.id }} | Level {{ view.level }}</p>
+  </div>
+  {% if view.location_id %}
+  <a class="button-link" href="{{ url_for('location_detail', location_id=view.location_id) }}">Open Bound Location</a>
+  {% endif %}
+</section>
+
+<section class="grid cols-2">
+  <div class="card">
+    <h3>Profile</h3>
+    {% if can_create_records %}
+    <form method="post" action="{{ url_for('save_alter', alter_id=view.id) }}" class="stack compact">
+      <label>Name<input name="name" value="{{ view.name }}"></label>
+      <label>Aliases<input name="aliases" value="{{ view.profile.aliases|join(', ') }}"></label>
+      <label>Species<input name="species" value="{{ '' if view.profile.species == legacy_value else view.profile.species }}"></label>
+      <label>Age<input name="age" value="{{ '' if view.profile.age == legacy_value else view.profile.age }}"></label>
+      <label>Birthday month
+        <select name="birthday_month">
+          <option value=""></option>
+          {% for month in month_options %}<option value="{{ month }}" {% if view.profile.birthday_month == loop.index %}selected{% endif %}>{{ month }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>Birthday year<input name="birthday_year" value="{{ view.profile.birthday_year or '' }}"></label>
+      <label>Gender<select name="gender"><option value=""></option>{% for item in gender_options %}<option value="{{ item }}" {% if view.profile.gender == item %}selected{% endif %}>{{ item }}</option>{% endfor %}</select></label>
+      <label>Reproductive Organ<select name="reproductive_organ"><option value=""></option>{% for item in organ_options %}<option value="{{ item }}" {% if view.profile.reproductive_organ == item %}selected{% endif %}>{{ item }}</option>{% endfor %}</select></label>
+      <label>Sexual/Romantic Attraction<input name="attraction" value="{{ '' if view.profile.sexual_romantic_attraction == legacy_value else view.profile.sexual_romantic_attraction }}"></label>
+      <label>Relationship Style<select name="relationship_style"><option value=""></option>{% for item in relationship_style_options %}<option value="{{ item }}" {% if view.profile.relationship_style == item %}selected{% endif %}>{{ item }}</option>{% endfor %}</select></label>
+      <label>Height<input name="height" value="{{ '' if view.profile.height == legacy_value else view.profile.height }}"></label>
+      <label>Location ID<input name="location_id" value="{{ view.location_id }}"></label>
+      <button class="primary">Save Profile</button>
+    </form>
+    <form method="post" action="{{ url_for('update_record_level', kind='alter', entry_id=view.id) }}" class="stack compact top-gap">
+      <label>Access level
+        <select name="level">{% for level in entry_level_options %}{% if current_level == 4 or level <= current_level %}<option value="{{ level }}" {% if view.level == level %}selected{% endif %}>Level {{ level }}</option>{% endif %}{% endfor %}</select>
+      </label>
+      <button>Update Access Level</button>
+    </form>
+    {% endif %}
+    <div class="stack compact top-gap">
+      {% for label, value in view.profile_summary %}
+      <div class="kv"><strong>{{ label }}</strong><span>{{ value }}</span></div>
+      {% endfor %}
+      <div class="kv"><strong>Location</strong><span>{{ view.location_name }}</span></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Assignments</h3>
+    {% if can_create_records %}
+    <form method="post" action="{{ url_for('update_alter_affiliations', alter_id=view.id) }}" class="stack compact">
+      <label>Affiliation
+        <select name="affiliation_id">
+          <option value=""></option>
+          {% for entry_id, name in view.affiliations %}<option value="{{ entry_id }}">{{ name }} ({{ entry_id }})</option>{% endfor %}
+        </select>
+      </label>
+      <label>Status<select name="status">{% for status in status_options %}<option value="{{ status }}">{{ status }}</option>{% endfor %}</select></label>
+      <div class="button-row">
+        <button class="primary" name="action" value="add">Add / Update Affiliation</button>
+        <button name="action" value="remove">Remove</button>
+      </div>
+    </form>
+    <form method="post" action="{{ url_for('update_alter_occupations', alter_id=view.id) }}" class="stack compact">
+      <label>Occupation / Role<input name="occupation"></label>
+      <label>Status<select name="status">{% for status in status_options %}<option value="{{ status }}">{{ status }}</option>{% endfor %}</select></label>
+      <div class="button-row">
+        <button class="primary" name="action" value="add">Add Occupation</button>
+        <button name="action" value="remove">Remove</button>
+      </div>
+    </form>
+    {% endif %}
+
+    <h3 class="top-gap">Relations</h3>
+    {% if can_create_records %}
+    <form method="post" action="{{ url_for('update_relation', alter_id=view.id) }}" class="stack compact">
+      <label>Other alter ID<input name="other_id"></label>
+      <label>Relation tag<select name="tag">{% for tag in view.relation_tags %}<option value="{{ tag }}">{{ tag }}</option>{% endfor %}</select></label>
+      <div class="button-row">
+        <button class="primary" name="action" value="set">Set Tag</button>
+        <button name="action" value="remove">Remove</button>
+      </div>
+    </form>
+    <details class="top-gap">
+      <summary>Bulk relation tags</summary>
+      <form method="post" action="{{ url_for('bulk_relations', alter_id=view.id) }}" class="stack compact">
+        {% for row in view.bulk_rows %}
+        <div class="bulk-row">
+          <label><input type="checkbox" name="selected_ids" value="{{ row.id }}"> {{ row.name }} ({{ row.id }})</label>
+          <select name="tag_{{ row.id }}">{% for tag in view.relation_tags %}<option value="{{ tag }}" {% if row.current_tag == tag %}selected{% endif %}>{{ tag }}</option>{% endfor %}</select>
+        </div>
+        {% endfor %}
+        <div class="button-row">
+          <button class="primary" name="bulk_action" value="set">Save Selected</button>
+          <button name="bulk_action" value="remove">Remove Selected</button>
+        </div>
+      </form>
+    </details>
+    {% endif %}
+
+    <div class="stack compact top-gap">
+      {% for relation in view.relations %}
+      <a class="list-item" href="{{ url_for('alter_detail', alter_id=relation.other_id) }}">{{ relation.label }} | {{ relation.other_name }} <span>{{ relation.other_id }}</span></a>
+      {% else %}
+      <p class="muted">No visible relations found.</p>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endblock %}

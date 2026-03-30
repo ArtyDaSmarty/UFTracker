@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+  <h2>{{ view.name }}</h2>
+  <p class="muted">{{ view.id }} | Level {{ view.level }}</p>
+  {% if can_create_records %}
+  <form method="post" action="{{ url_for('rename_record', kind='location', entry_id=view.id) }}" class="stack compact">
+    <label>Location name<input name="name" value="{{ view.name }}"></label>
+    <button>Rename Location</button>
+  </form>
+  <form method="post" action="{{ url_for('update_record_level', kind='location', entry_id=view.id) }}" class="stack compact top-gap">
+    <label>Access level
+      <select name="level">{% for level in entry_level_options %}{% if current_level == 4 or level <= current_level %}<option value="{{ level }}" {% if view.level == level %}selected{% endif %}>Level {{ level }}</option>{% endif %}{% endfor %}</select>
+    </label>
+    <button>Update Access Level</button>
+  </form>
+  {% endif %}
+  <h3 class="top-gap">Bound Alters</h3>
+  {% for alter in view.bound_alters %}
+  <a class="list-item" href="{{ url_for('alter_detail', alter_id=alter.id) }}">{{ alter.name }} <span>{{ alter.id }}</span></a>
+  {% else %}
+  <p class="muted">No visible alters bound to this location.</p>
+  {% endfor %}
+</section>
+{% endblock %}

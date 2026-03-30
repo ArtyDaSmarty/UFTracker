@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}United Front Technical Database{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <h1>United Front Technical Database</h1>
+      {% if current_user %}
+      <p class="muted">{{ current_user.username }} | Level {{ current_level }} | {{ current_role|upper }}</p>
+      <nav>
+        <a href="{{ url_for('dashboard') }}">Dashboard</a>
+        {% if current_role == 'admin' %}
+        <a href="{{ url_for('admin_users') }}">User Management</a>
+        <a href="{{ url_for('admin_import') }}">Import JSON</a>
+        <a href="{{ url_for('admin_storage') }}">Storage</a>
+        {% endif %}
+        <a href="{{ url_for('logout') }}">Logout</a>
+      </nav>
+      <label class="theme-toggle"><input type="checkbox" id="themeToggle"> Dark mode</label>
+      {% endif %}
+    </aside>
+    <main class="main">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          <div class="flash-wrap">
+            {% for category, message in messages %}
+              <div class="flash {{ category }}">{{ message }}</div>
+            {% endfor %}
+          </div>
+        {% endif %}
+      {% endwith %}
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+  <script>
+    const toggle = document.getElementById('themeToggle');
+    const savedTheme = localStorage.getItem('uftd-theme') || 'light';
+    document.documentElement.dataset.theme = savedTheme;
+    if (toggle) {
+      toggle.checked = savedTheme === 'dark';
+      toggle.addEventListener('change', () => {
+        const theme = toggle.checked ? 'dark' : 'light';
+        document.documentElement.dataset.theme = theme;
+        localStorage.setItem('uftd-theme', theme);
+      });
+    }
+  </script>
+</body>
+</html>

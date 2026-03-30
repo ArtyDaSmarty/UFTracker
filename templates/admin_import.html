@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+  <h2>Import JSON</h2>
+  <form method="post" enctype="multipart/form-data" class="stack">
+    <label>Target
+      <select name="target">
+        <option value="tracker">Tracker Data</option>
+        <option value="hashes">Hash Data</option>
+        <option value="users">Users</option>
+      </select>
+    </label>
+    <label>JSON file<input type="file" name="file" accept=".json" required></label>
+    <button class="primary">Import</button>
+  </form>
+</section>
+{% endblock %}

@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+  <div>
+    <h2>Dashboard</h2>
+    <p class="muted">Access is filtered by your user level. Creation tools only appear when your account can create records.</p>
+  </div>
+  <div class="counts">
+    {% for key, value in counts.items() %}
+    <div class="pill">{{ value }} {{ key }}</div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="grid cols-5">
+  <div class="card">
+    <h3>Create Records</h3>
+    {% if can_create_records %}
+    <form method="post" action="{{ url_for('create_record', kind='alter') }}" class="stack compact">
+      <label>Alter name<input name="name" required></label>
+      <label>Alter ID<input name="entry_id" placeholder="Leave blank to auto-generate"></label>
+      <label>Access level
+        <select name="level">{% for level in entry_level_options %}{% if current_level == 4 or level <= current_level %}<option value="{{ level }}" {% if level == current_level or (current_level == 4 and level == 3) %}selected{% endif %}>Level {{ level }}</option>{% endif %}{% endfor %}</select>
+      </label>
+      <button class="primary">Create Alter</button>
+    </form>
+    <form method="post" action="{{ url_for('create_record', kind='location') }}" class="stack compact">
+      <label>Location name<input name="name" required></label>
+      <label>Location ID<input name="entry_id" placeholder="Leave blank to auto-generate LOC-"></label>
+      <label>Access level
+        <select name="level">{% for level in entry_level_options %}{% if current_level == 4 or level <= current_level %}<option value="{{ level }}" {% if level == current_level or (current_level == 4 and level == 3) %}selected{% endif %}>Level {{ level }}</option>{% endif %}{% endfor %}</select>
+      </label>
+      <button class="primary">Create Location</button>
+    </form>
+    {% else %}
+    <p class="muted">This account is search and inquiry only.</p>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h3>Prefixes</h3>
+    {% if can_create_records %}
+    <form method="post" action="{{ url_for('add_prefix', kind='alter') }}" class="stack compact">
+      <label>New alter prefix<input name="prefix"></label>
+      <button>Add Alter Prefix</button>
+    </form>
+    <form method="post" action="{{ url_for('add_prefix', kind='affiliation') }}" class="stack compact">
+      <label>New affiliation prefix<input name="prefix"></label>
+      <button>Add Affiliation Prefix</button>
+    </form>
+    {% else %}
+    <p class="muted">Prefix management requires creation permission.</p>
+    {% endif %}
+    <p class="muted">Alter: {{ alter_prefixes|join(', ') }}</p>
+    <p class="muted">Affiliation: {{ affiliation_prefixes|join(', ') }}</p>
+    <p class="muted">Location: fixed LOC-</p>
+  </div>
+
+  <div class="card">
+    <h3>Affiliations</h3>
+    {% if can_create_records %}
+    <form method="post" action="{{ url_for('create_record', kind='affiliation') }}" class="stack compact">
+      <label>Affiliation name<input name="name" required></label>
+      <label>Affiliation ID<input name="entry_id" placeholder="Leave blank to auto-generate"></label>
+      <label>Access level
+        <select name="level">{% for level in entry_level_options %}{% if current_level == 4 or level <= current_level %}<option value="{{ level }}" {% if level == current_level or (current_level == 4 and level == 3) %}selected{% endif %}>Level {{ level }}</option>{% endif %}{% endfor %}</select>
+      </label>
+      <button class="primary">Create Affiliation</button>
+    </form>
+    {% endif %}
+    <form method="get" action="{{ url_for('search') }}" class="stack compact">
+      <input type="hidden" name="kind" value="affiliation">
+      <label>Search affiliations<input name="q"></label>
+      <button>Search</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h3>Relation Tags</h3>
+    {% if can_create_records %}
+    <form method="post" action="{{ url_for('add_standard_tag') }}" class="stack compact">
+      <label>Standard tag<input name="tag_name"></label>
+      <button>Add Tag</button>
+    </form>
+    <form method="post" action="{{ url_for('add_special_tag') }}" class="stack compact">
+      <label>Forward tag<input name="forward_tag"></label>
+      <label>Reverse tag<input name="reverse_tag"></label>
+      <button>Add Reciprocal Pair</button>
+    </form>
+    {% else %}
+    <p class="muted">Tag management requires creation permission.</p>
+    {% endif %}
+    <p class="muted small">{{ context.tags|join(', ') }}</p>
+  </div>
+
+  <div class="card">
+    <h3>Search and Inquiry</h3>
+    <form method="get" action="{{ url_for('search') }}" class="stack compact">
+      <label>Search alters<input name="q"></label>
+      <input type="hidden" name="kind" value="alter">
+      <button>Search Alters</button>
+    </form>
+    <form method="get" action="{{ url_for('search') }}" class="stack compact">
+      <label>Search locations<input name="q"></label>
+      <input type="hidden" name="kind" value="location">
+      <button>Search Locations</button>
+    </form>
+  </div>
+</section>
+
+<section class="grid cols-4">
+  <div class="card"><h3>Alters</h3>{% for entry_id, name in context.alters %}<a class="list-item" href="{{ url_for('alter_detail', alter_id=entry_id) }}">{{ name }} <span>{{ entry_id }}</span></a>{% else %}<p class="muted">No visible alters.</p>{% endfor %}</div>
+  <div class="card"><h3>Locations</h3>{% for entry_id, name in context.locations %}<a class="list-item" href="{{ url_for('location_detail', location_id=entry_id) }}">{{ name }} <span>{{ entry_id }}</span></a>{% else %}<p class="muted">No visible locations.</p>{% endfor %}</div>
+  <div class="card"><h3>Affiliations</h3>{% for entry_id, name in context.affiliations %}<a class="list-item" href="{{ url_for('affiliation_detail', affiliation_id=entry_id) }}">{{ name }} <span>{{ entry_id }}</span></a>{% else %}<p class="muted">No visible affiliations.</p>{% endfor %}</div>
+  <div class="card"><h3>Relations</h3>{% for relation in context.relations %}<div class="list-item static">{{ relation.source_id }} -> {{ relation.target_id }}<span>{{ relation.tag }}/{{ relation.reverse_tag }}</span></div>{% else %}<p class="muted">No visible relations.</p>{% endfor %}</div>
+</section>
+{% endblock %}

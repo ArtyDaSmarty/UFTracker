@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+  <h2>User Management</h2>
+  <p class="muted">Level 4 is reserved for the single Admin. Level 3 is Mod. New users default to Level 1.</p>
+  {% for user in users %}
+  <form method="post" class="stack compact bordered">
+    <input type="hidden" name="user_id" value="{{ user.id }}">
+    <div class="kv"><strong>{{ user.username }}</strong><span>Level {{ user.level }} | {{ user.role|upper }}</span></div>
+
+    {% if user.level == 4 %}
+    <p class="muted">This is the only Admin account. Its level is fixed at 4 and creation access is always allowed.</p>
+    {% else %}
+    <label>Level
+      <select name="level">
+        {% for level in user_level_options %}
+        {% if level < 4 %}
+        <option value="{{ level }}" {% if user.level == level %}selected{% endif %}>Level {{ level }}{% if level == 3 %} (Mod){% endif %}</option>
+        {% endif %}
+        {% endfor %}
+      </select>
+    </label>
+    <button name="action" value="level">Update Level</button>
+
+    <label><input type="checkbox" name="creation_permission" {% if user.creation_permission %}checked{% endif %}> Creation permission</label>
+    <button name="action" value="creation">Save Creation Permission</button>
+    {% endif %}
+
+    <label>Reset password<input type="password" name="new_password"></label>
+    <button name="action" value="password">Set Password</button>
+
+    <label><input type="checkbox" name="active" {% if user.active %}checked{% endif %}> Active</label>
+    <button name="action" value="active">Save Active State</button>
+  </form>
+  {% endfor %}
+</section>
+{% endblock %}

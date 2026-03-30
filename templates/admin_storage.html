@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+  <h2>Storage</h2>
+  <p><strong>Backend:</strong> {{ backend }}</p>
+  <p><strong>S3 Bucket:</strong> {{ bucket or 'Not configured' }}</p>
+  <p><strong>S3 Prefix:</strong> {{ prefix or 'Not configured' }}</p>
+  <p class="muted">Set <code>STORAGE_BACKEND=s3</code>, <code>S3_BUCKET</code>, and optional <code>S3_PREFIX</code> to move all JSON-backed data into S3.</p>
+</section>
+{% endblock %}

@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+  <h2>Search Results</h2>
+  <p class="muted">{{ results|length }} visible result(s) for "{{ query }}" in {{ kind }}s.</p>
+  {% for entry_id, name in results %}
+    {% if kind == 'alter' %}
+      <a class="list-item" href="{{ url_for('alter_detail', alter_id=entry_id) }}">{{ name }} <span>{{ entry_id }}</span></a>
+    {% elif kind == 'location' %}
+      <a class="list-item" href="{{ url_for('location_detail', location_id=entry_id) }}">{{ name }} <span>{{ entry_id }}</span></a>
+    {% else %}
+      <a class="list-item" href="{{ url_for('affiliation_detail', affiliation_id=entry_id) }}">{{ name }} <span>{{ entry_id }}</span></a>
+    {% endif %}
+  {% else %}
+    <p class="muted">No visible matches found.</p>
+  {% endfor %}
+</section>
+{% endblock %}
