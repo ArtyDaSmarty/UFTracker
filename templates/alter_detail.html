@@ -53,6 +53,18 @@
       {% for label, value in view.profile_summary %}
       <div class="kv"><strong>{{ label }}</strong><span>{{ value }}</span></div>
       {% endfor %}
+      <div class="kv">
+        <strong>Affiliations</strong>
+        <span>
+          {% if view.profile_affiliations %}
+            {% for affiliation in view.profile_affiliations %}
+            <a href="{{ url_for('affiliation_detail', affiliation_id=affiliation.id) }}">{{ affiliation.name }}</a>{% if affiliation.status %} ({{ affiliation.status }}){% endif %}{% if not loop.last %}, {% endif %}
+            {% endfor %}
+          {% else %}
+            {{ legacy_value }}
+          {% endif %}
+        </span>
+      </div>
       <div class="kv"><strong>Location</strong><span>{{ view.location_name }}</span></div>
     </div>
   </div>
