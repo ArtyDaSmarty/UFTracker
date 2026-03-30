@@ -67,9 +67,14 @@
         submitter.textContent = 'Saving...';
       }
 
+      const formData = new FormData(form);
+      if (submitter && submitter.name && !formData.has(submitter.name)) {
+        formData.append(submitter.name, submitter.value);
+      }
+
       const response = await fetch(form.action || window.location.href, {
         method: (form.method || 'POST').toUpperCase(),
-        body: new FormData(form),
+        body: formData,
         headers: { 'X-Requested-With': 'XMLHttpRequest' },
         credentials: 'same-origin'
       });

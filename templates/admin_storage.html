@@ -4,6 +4,8 @@
   <div class="card">
     <h2>Storage</h2>
     <p><strong>Backend:</strong> {{ backend }}</p>
+    <p><strong>Media Backend:</strong> {{ media_backend }}</p>
+    <p><strong>Database URL:</strong> {{ 'Stored securely' if has_database_url else 'Not configured' }}</p>
     <p><strong>Endpoint:</strong> {{ endpoint or 'Not configured' }}</p>
     <p><strong>S3 Bucket:</strong> {{ bucket or 'Not configured' }}</p>
     <p><strong>Region:</strong> {{ region or 'auto' }}</p>
@@ -22,8 +24,16 @@
         <select name="backend">
           <option value="local" {% if backend == 'local' %}selected{% endif %}>Local</option>
           <option value="s3" {% if backend == 's3' %}selected{% endif %}>S3-Compatible</option>
+          <option value="postgres" {% if backend == 'postgres' %}selected{% endif %}>PostgreSQL</option>
         </select>
       </label>
+      <label>Media Backend
+        <select name="media_backend">
+          <option value="local" {% if media_backend == 'local' %}selected{% endif %}>Local</option>
+          <option value="s3" {% if media_backend == 's3' %}selected{% endif %}>S3-Compatible</option>
+        </select>
+      </label>
+      <label>Database URL<input name="database_url" type="password" placeholder="{% if has_database_url %}Stored securely{% else %}postgresql://user:pass@host:5432/dbname{% endif %}"></label>
       <label>Endpoint<input name="s3_endpoint" value="{{ endpoint }}" placeholder="https://s3.example.com"></label>
       <label>Bucket<input name="s3_bucket" value="{{ bucket }}"></label>
       <label>Region<input name="s3_region" value="{{ region }}" placeholder="auto"></label>
@@ -35,8 +45,8 @@
       <button class="primary" name="action" value="save">Save Storage Settings</button>
       <button name="action" value="migrate">Save And Migrate Data</button>
     </form>
-    <p class="muted">Leave access and secret key blank to keep the currently stored secure values.</p>
-    <p class="muted">Use migrate after switching to S3 so your tracker, hashes, and users move from the persistent volume into the configured backend.</p>
+    <p class="muted">Leave database URL, access key, and secret key blank to keep the currently stored secure values.</p>
+    <p class="muted">When PostgreSQL is selected, structured data moves into Postgres while gallery media stays on the configured media backend. Legacy JSON is auto-imported from local storage or configured S3 when Postgres is empty.</p>
   </div>
 </section>
 {% endblock %}
