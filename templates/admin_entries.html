@@ -9,6 +9,7 @@
         <option value="location" {% if kind == 'location' %}selected{% endif %}>Location</option>
         <option value="affiliation" {% if kind == 'affiliation' %}selected{% endif %}>Affiliation</option>
         <option value="document" {% if kind == 'document' %}selected{% endif %}>Document</option>
+        <option value="wheel" {% if kind == 'wheel' %}selected{% endif %}>Wheel</option>
       </select>
     </label>
     <label>Search<input name="q" value="{{ query }}" placeholder="Search by name or ID"></label>
