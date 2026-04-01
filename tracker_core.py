@@ -431,6 +431,19 @@ def legacy_affiliation():
     }
 
 
+def legacy_wheel():
+    return {
+        "entries": [],
+        "permissions": {"view": [], "edit": []},
+        "options": {
+            "entry_deletion": 1,
+            "stop_repeat_entry": 0,
+            "repeat_exceptions": [],
+        },
+        "used_entries": [],
+    }
+
+
 def load_users(storage):
     data = storage.read_json(USER_FILE, users_default())
     data.setdefault("users", [])
@@ -849,7 +862,16 @@ def create_entry_with_level(storage, bucket_name, entity_label, name, entry_id, 
     elif bucket_name == "affiliations":
         data["affiliation_records"].setdefault(entry_id, legacy_affiliation())
     elif bucket_name == "wheels":
-        data["wheel_records"].setdefault(entry_id, legacy_wheel())
+        try:
+            default_wheel = legacy_wheel()
+        except NameError:
+            default_wheel = {
+                "entries": [],
+                "permissions": {"view": [], "edit": []},
+                "options": {"entry_deletion": 1, "stop_repeat_entry": 0, "repeat_exceptions": []},
+                "used_entries": [],
+            }
+        data["wheel_records"].setdefault(entry_id, default_wheel)
     save_data(storage, data)
     sync_saved_hashes_with_tracker(storage, data)
     return True, f"Created {entity_label}: {name} ({entry_id})"
