@@ -1,6 +1,10 @@
 import mimetypes
 import os
 import logging
+import json
+import threading
+import time
+import uuid
 import zipfile
 from pathlib import Path
 
@@ -118,6 +122,8 @@ from tracker_core import (
 APP_DIR = Path(__file__).resolve().parent
 DATA_DIR = Path(os.getenv("DATA_DIR", str(APP_DIR / "data"))).resolve()
 DATA_DIR.mkdir(parents=True, exist_ok=True)
+IMPORT_JOB_DIR = DATA_DIR / "import_jobs"
+IMPORT_JOB_DIR.mkdir(parents=True, exist_ok=True)
 migrate_legacy_local_files(APP_DIR, DATA_DIR)
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "change-me-for-production")
@@ -187,6 +193,43 @@ def delete_wheel_media(entry):
         storage.delete_bytes(media_name)
 
 
+def import_job_status_path(job_id):
+    return IMPORT_JOB_DIR / f"{job_id}.json"
+
+
+def import_job_upload_path(job_id, suffix):
+    return IMPORT_JOB_DIR / f"{job_id}{suffix}"
+
+
+def write_import_job_status(job_id, payload):
+    path = import_job_status_path(job_id)
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def read_import_job_status(job_id):
+    path = import_job_status_path(job_id)
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def delete_import_job_files(job_id, upload_path=None):
+    status_path = import_job_status_path(job_id)
+    try:
+        if upload_path and Path(upload_path).exists():
+            Path(upload_path).unlink()
+    except OSError:
+        pass
+    try:
+        if status_path.exists():
+            status_path.unlink()
+    except OSError:
+        pass
+
+
 def import_wheel_upload(wheel_id, file_storage):
     if not file_storage or not file_storage.filename:
         return False, "Choose a .zip or .txt file.", 0
@@ -222,6 +265,117 @@ def import_wheel_upload(wheel_id, file_storage):
         return False, "No usable image or text entries were found in that zip.", 0
     except zipfile.BadZipFile:
         return False, "That zip file could not be read.", 0
+
+
+def process_wheel_import_job(job_id, wheel_id, upload_path):
+    status = read_import_job_status(job_id)
+    if not status:
+        return
+    suffix = Path(upload_path).suffix.lower()
+    try:
+        status["state"] = "processing"
+        status["message"] = "Importing entries..."
+        write_import_job_status(job_id, status)
+        added = 0
+        if suffix == ".txt":
+            lines = Path(upload_path).read_text(encoding="utf-8", errors="replace").splitlines()
+            valid_lines = [line for line in lines if line.strip() and not line.strip().startswith("#")]
+            status["total"] = len(valid_lines)
+            status["processed"] = 0
+            write_import_job_status(job_id, status)
+            success, message = add_wheel_text_entries(storage, wheel_id, lines)
+            status["processed"] = len(valid_lines)
+            status["added"] = len(valid_lines) if success else 0
+            status["state"] = "complete" if success else "error"
+            status["message"] = message
+            write_import_job_status(job_id, status)
+            return
+
+        with zipfile.ZipFile(upload_path) as archive:
+            members = [member for member in archive.infolist() if not member.is_dir()]
+            usable = []
+            for member in members:
+                lower = Path(member.filename).name.lower()
+                if lower.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tif", ".tiff", ".txt")):
+                    usable.append(member)
+            status["total"] = len(usable)
+            status["processed"] = 0
+            status["added"] = 0
+            write_import_job_status(job_id, status)
+            for member in usable:
+                member_name = Path(member.filename).name
+                lower = member_name.lower()
+                if lower.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tif", ".tiff")):
+                    with archive.open(member) as image_file:
+                        content = image_file.read()
+                    success, _ = add_wheel_image_entry(storage, wheel_id, member_name, content)
+                    if success:
+                        added += 1
+                elif lower.endswith(".txt"):
+                    with archive.open(member) as text_file:
+                        lines = text_file.read().decode("utf-8", errors="replace").splitlines()
+                    success, _ = add_wheel_text_entries(storage, wheel_id, lines)
+                    if success:
+                        added += len([line for line in lines if line.strip() and not line.strip().startswith("#")])
+                status["processed"] += 1
+                status["added"] = added
+                status["message"] = f"Processed {status['processed']} of {status['total']} files."
+                write_import_job_status(job_id, status)
+
+        if added:
+            status["state"] = "complete"
+            status["message"] = f"Imported {added} wheel entr{'y' if added == 1 else 'ies'}."
+            status["added"] = added
+        else:
+            status["state"] = "error"
+            status["message"] = "No usable image or text entries were found in that zip."
+        write_import_job_status(job_id, status)
+    except zipfile.BadZipFile:
+        status["state"] = "error"
+        status["message"] = "That zip file could not be read."
+        write_import_job_status(job_id, status)
+    except StorageError as error:
+        status["state"] = "error"
+        status["message"] = str(error) or "Storage is unavailable right now."
+        write_import_job_status(job_id, status)
+    except Exception as error:  # pragma: no cover
+        logger.exception("Wheel import job failed")
+        status["state"] = "error"
+        status["message"] = f"Import failed: {error}"
+        write_import_job_status(job_id, status)
+    finally:
+        clear_request_caches()
+        try:
+            Path(upload_path).unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def start_wheel_import_job(wheel_id, file_storage, user):
+    if not file_storage or not file_storage.filename:
+        return False, {"message": "Choose a .zip or .txt file."}
+    suffix = Path(secure_filename(file_storage.filename)).suffix.lower()
+    if suffix not in {".zip", ".txt"}:
+        return False, {"message": "Imports must be .zip or .txt."}
+    job_id = uuid.uuid4().hex
+    upload_path = import_job_upload_path(job_id, suffix)
+    file_storage.save(upload_path)
+    payload = {
+        "job_id": job_id,
+        "wheel_id": wheel_id,
+        "filename": secure_filename(file_storage.filename),
+        "state": "queued",
+        "message": "Upload received. Preparing import...",
+        "processed": 0,
+        "total": 0,
+        "added": 0,
+        "created_at": int(time.time()),
+        "created_by": user["id"] if user else "",
+    }
+    write_import_job_status(job_id, payload)
+    thread = threading.Thread(target=process_wheel_import_job, args=(job_id, wheel_id, str(upload_path)), daemon=True)
+    thread.start()
+    return True, payload
 
 
 def get_users_data():
@@ -781,12 +935,42 @@ def import_wheel_entries_route(wheel_id):
     data = get_tracker_data()
     record = data.get("wheel_records", {}).get(wheel_id)
     if not user_can_edit_wheel(record, current_user()):
+        if is_async_request():
+            return jsonify({"ok": False, "message": "You do not have edit access to that wheel.", "category": "error"}), 403
         flash("You do not have edit access to that wheel.", "error")
         return redirect(url_for("wheels"))
-    success, message, _ = import_wheel_upload(wheel_id, request.files.get("bundle"))
-    flash(message, "success" if success else "error")
-    clear_request_caches()
+    success, payload = start_wheel_import_job(wheel_id, request.files.get("bundle"), current_user())
+    if is_async_request():
+        if success:
+            return jsonify(
+                {
+                    "ok": True,
+                    "message": "Import started.",
+                    "category": "success",
+                    "job_id": payload["job_id"],
+                    "status_url": url_for("wheel_import_status_route", wheel_id=wheel_id, job_id=payload["job_id"]),
+                }
+            )
+        return jsonify({"ok": False, "message": payload["message"], "category": "error"}), 400
+    flash(payload["message"] if not success else "Import started.", "success" if success else "error")
     return redirect(url_for("wheel_detail", wheel_id=wheel_id))
+
+
+@app.route("/wheel/<wheel_id>/import-status/<job_id>")
+@login_required
+def wheel_import_status_route(wheel_id, job_id):
+    data = get_tracker_data()
+    record = data.get("wheel_records", {}).get(wheel_id)
+    if not user_can_edit_wheel(record, current_user()):
+        return jsonify({"ok": False, "message": "You do not have edit access to that wheel.", "category": "error"}), 403
+    payload = read_import_job_status(job_id)
+    if not payload or payload.get("wheel_id") != wheel_id:
+        return jsonify({"ok": False, "message": "That import job was not found.", "category": "error"}), 404
+    if payload.get("created_by") and payload.get("created_by") != current_user()["id"] and current_user()["role"] != "admin":
+        return jsonify({"ok": False, "message": "You do not have access to that import job.", "category": "error"}), 403
+    if payload.get("state") in {"complete", "error"}:
+        clear_request_caches()
+    return jsonify({"ok": True, "job": payload})
 
 
 @app.route("/wheel/<wheel_id>/entries/<entry_id>/delete", methods=["POST"])
