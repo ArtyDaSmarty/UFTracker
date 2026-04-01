@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+  <div>
+    <h2>{{ view.name }}</h2>
+    <p class="muted">{{ view.id }}</p>
+  </div>
+  <form method="post" action="{{ url_for('spin_wheel_route', wheel_id=view.id) }}">
+    <button class="primary">Spin Wheel</button>
+  </form>
+</section>
+
+{% if spin_result %}
+<section class="card">
+  <h3>Selected Entry</h3>
+  {% if spin_result.entry.kind == 'text' %}
+  <label>Text
+    <textarea rows="6" readonly>{{ spin_result.entry.text }}</textarea>
+  </label>
+  {% else %}
+  <p class="muted">Image selected. You can copy the URL or open the image before removal.</p>
+  <label>Image URL
+    <input value="{{ spin_result.entry.media_url }}" readonly>
+  </label>
+  <img src="{{ spin_result.entry.media_url }}" alt="Wheel image result" class="wheel-result-image top-gap">
+  {% endif %}
+  {% if spin_result.deleted %}
+  <p class="muted top-gap">This entry was deleted automatically after selection.</p>
+  {% elif spin_result.options.entry_deletion == 1 and view.can_edit %}
+  <form method="post" action="{{ url_for('delete_wheel_entry_route', wheel_id=view.id, entry_id=spin_result.entry.id) }}" class="top-gap">
+    <button>Delete Selected Entry Now</button>
+  </form>
+  {% endif %}
+</section>
+{% endif %}
+
+<section class="grid cols-2">
+  <div class="card">
+    <h3>Entries</h3>
+    {% if view.can_edit %}
+    <form method="post" action="{{ url_for('add_wheel_text_entries_route', wheel_id=view.id) }}" class="stack compact">
+      <label>Add Text Entries<textarea name="entries_text" rows="6" placeholder="One entry per line"></textarea></label>
+      <button class="primary">Add Text Entries</button>
+    </form>
+    <form method="post" action="{{ url_for('import_wheel_entries_route', wheel_id=view.id) }}" enctype="multipart/form-data" class="stack compact top-gap">
+      <label>Import .zip or .txt<input type="file" name="bundle" accept=".zip,.txt"></label>
+      <button>Import Entries</button>
+    </form>
+    <form method="post" action="{{ url_for('clear_wheel_cache_route', wheel_id=view.id) }}" class="top-gap">
+      <button>Clear Repeat Cache</button>
+    </form>
+    {% endif %}
+
+    <div class="stack compact top-gap">
+      {% for entry in view.entries %}
+      <div class="entry-admin-row">
+        <div class="entry-admin-meta">
+          <strong>{{ entry.kind|upper }}</strong>
+          <span>{{ entry.display }}</span>
+        </div>
+        {% if view.can_edit %}
+        <form method="post" action="{{ url_for('delete_wheel_entry_route', wheel_id=view.id, entry_id=entry.id) }}">
+          <button>Remove</button>
+        </form>
+        {% endif %}
+      </div>
+      {% else %}
+      <p class="muted">This wheel has no entries yet.</p>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Wheel Settings</h3>
+    {% if current_role == 'admin' %}
+    <form method="post" action="{{ url_for('update_wheel_settings', wheel_id=view.id) }}" class="stack compact">
+      <label>Deletion Mode
+        <select name="entry_deletion">
+          <option value="0" {% if view.options.entry_deletion == 0 %}selected{% endif %}>Keep entries</option>
+          <option value="1" {% if view.options.entry_deletion == 1 %}selected{% endif %}>Allow deletion after selection</option>
+          <option value="2" {% if view.options.entry_deletion == 2 %}selected{% endif %}>Delete automatically after selection</option>
+        </select>
+      </label>
+      <label class="check-row"><input type="checkbox" name="stop_repeat_entry" {% if view.options.stop_repeat_entry == 1 %}checked{% endif %}><span>Stop Repeat Entry</span></label>
+      <label>Repeat Exceptions<input name="repeat_exceptions" value="{{ view.options.repeat_exceptions|join(', ') }}" placeholder="Comma-separated text entries allowed to repeat"></label>
+      <button class="primary">Save Wheel Settings</button>
+    </form>
+
+    <form method="post" action="{{ url_for('update_wheel_permissions_route', wheel_id=view.id) }}" class="stack compact top-gap">
+      <h4>Per User Access</h4>
+      {% for row in view.user_rows %}
+      <div class="bordered compact">
+        <div class="kv"><strong>{{ row.username }}</strong><span>{{ row.id }}</span></div>
+        <label class="check-row"><input type="checkbox" name="view_user_ids" value="{{ row.id }}" {% if row.can_view %}checked{% endif %}><span>View</span></label>
+        <label class="check-row"><input type="checkbox" name="edit_user_ids" value="{{ row.id }}" {% if row.can_edit %}checked{% endif %}><span>Edit</span></label>
+      </div>
+      {% endfor %}
+      <button>Save User Access</button>
+    </form>
+    {% else %}
+    <p class="muted">Only the Admin can edit wheel settings and per-user access.</p>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}
