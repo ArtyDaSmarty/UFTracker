@@ -1,6 +1,8 @@
 import mimetypes
+import io
 import os
 import logging
+import zipfile
 from pathlib import Path
 
 from flask import Flask, Response, flash, g, has_request_context, jsonify, redirect, render_template, request, session, url_for
@@ -28,6 +30,7 @@ from tracker_core import (
     StorageError,
     STORAGE_SETTINGS_FILE,
     USER_FILE,
+    WHEEL_PREFIX,
     add_gallery_item,
     bind_location,
     build_alter_view,
@@ -35,6 +38,8 @@ from tracker_core import (
     build_dashboard_context,
     build_document_view,
     build_location_view,
+    build_wheel_view,
+    build_wheels_context,
     can_view_document_for_entry,
     can_view_gallery_for_entry,
     can_view_profile_for_entry,
@@ -99,6 +104,15 @@ from tracker_core import (
     user_can_view_memory,
     user_can_view_profile,
     user_can_view_relations,
+    user_can_view_wheel,
+    user_can_edit_wheel,
+    save_wheel_settings,
+    save_wheel_permissions,
+    add_wheel_text_entries,
+    add_wheel_image_entry,
+    remove_wheel_entry,
+    clear_wheel_used_entries,
+    spin_wheel,
 )
 
 
@@ -166,6 +180,47 @@ def delete_gallery_upload(image_url):
     if not media_name:
         return
     storage.delete_bytes(media_name)
+
+
+def delete_wheel_media(entry):
+    media_name = media_name_from_url(entry.get("media_url", ""))
+    if media_name:
+        storage.delete_bytes(media_name)
+
+
+def import_wheel_upload(wheel_id, file_storage):
+    if not file_storage or not file_storage.filename:
+        return False, "Choose a .zip or .txt file.", 0
+    suffix = Path(secure_filename(file_storage.filename)).suffix.lower()
+    payload = file_storage.read()
+    if suffix == ".txt":
+        lines = payload.decode("utf-8", errors="replace").splitlines()
+        return (*add_wheel_text_entries(storage, wheel_id, lines), len([line for line in lines if line.strip() and not line.strip().startswith("#")]))
+    if suffix != ".zip":
+        return False, "Imports must be .zip or .txt.", 0
+    added = 0
+    try:
+        with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+            for member in archive.infolist():
+                if member.is_dir():
+                    continue
+                member_name = Path(member.filename).name
+                lower = member_name.lower()
+                content = archive.read(member)
+                if lower.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tif", ".tiff")):
+                    success, _ = add_wheel_image_entry(storage, wheel_id, member_name, content)
+                    if success:
+                        added += 1
+                elif lower.endswith(".txt"):
+                    lines = content.decode("utf-8", errors="replace").splitlines()
+                    success, message = add_wheel_text_entries(storage, wheel_id, lines)
+                    if success:
+                        added += len([line for line in lines if line.strip() and not line.strip().startswith("#")])
+        if added:
+            return True, f"Imported {added} wheel entr{'y' if added == 1 else 'ies'}.", added
+        return False, "No usable image or text entries were found in that zip.", 0
+    except zipfile.BadZipFile:
+        return False, "That zip file could not be read.", 0
 
 
 def get_users_data():
@@ -313,13 +368,19 @@ def index():
 @app.route("/media/<kind>/<entry_id>/<path:filename>")
 @login_required
 def media_file(kind, entry_id, filename):
-    if kind not in {"alter", "location"}:
+    if kind not in {"alter", "location", "affiliation", "wheel"}:
         flash("Unknown media type.", "error")
         return redirect(url_for("dashboard"))
-    if not can_view_gallery_for_entry(get_tracker_data(), current_user(), kind, entry_id):
-        flash("You do not have permission to view that locked gallery.", "error")
-        return redirect(url_for("dashboard"))
-    if not entry_is_accessible(get_tracker_data(), kind, entry_id, current_user_level()):
+    data = get_tracker_data()
+    if kind == "wheel":
+        if not user_can_view_wheel(data.get("wheel_records", {}).get(entry_id), current_user()):
+            flash("You do not have access to that wheel media.", "error")
+            return redirect(url_for("wheels"))
+    else:
+        if not can_view_gallery_for_entry(data, current_user(), kind, entry_id):
+            flash("You do not have permission to view that locked gallery.", "error")
+            return redirect(url_for("dashboard"))
+    if not entry_is_accessible(data, kind, entry_id, current_user_level()):
         flash("You do not have access to that media.", "error")
         return redirect(url_for("dashboard"))
     media_name = media_storage_name(kind, entry_id, filename)
@@ -399,6 +460,10 @@ def admin_entries():
             gallery_urls = list(data.get("alter_profiles", {}).get(entry_id, {}).get("gallery", []))
         elif kind == "location":
             gallery_urls = list(data.get("location_galleries", {}).get(entry_id, []))
+        elif kind == "affiliation":
+            gallery_urls = list(data.get("affiliation_records", {}).get(entry_id, {}).get("gallery", []))
+        elif kind == "wheel":
+            gallery_urls = [item.get("media_url", "") for item in data.get("wheel_records", {}).get(entry_id, {}).get("entries", []) if item.get("kind") == "image"]
         success, message = delete_entry(storage, kind, entry_id)
         if success:
             for image_url in gallery_urls:
@@ -516,6 +581,8 @@ def generate_id(kind):
             return redirect(url_for("dashboard"))
     elif kind == "document":
         prefix = DOCUMENT_PREFIX if prefix != "" else ""
+    elif kind == "wheel":
+        prefix = WHEEL_PREFIX if prefix != "" else ""
     else:
         if is_async_request():
             return jsonify({"ok": False, "message": "Unknown ID type.", "category": "error"}), 400
@@ -543,7 +610,9 @@ def create_record(kind):
         entry_id = generate_unique_hash(storage, data["affiliation_prefixes"][0] if data["affiliation_prefixes"] else "")
     elif kind == "document" and not entry_id:
         entry_id = generate_unique_hash(storage, DOCUMENT_PREFIX)
-    bucket_map = {"alter": ("alters", "alter"), "location": ("locations", "location"), "affiliation": ("affiliations", "affiliation"), "document": ("documents", "document")}
+    elif kind == "wheel" and not entry_id:
+        entry_id = generate_unique_hash(storage, WHEEL_PREFIX)
+    bucket_map = {"alter": ("alters", "alter"), "location": ("locations", "location"), "affiliation": ("affiliations", "affiliation"), "document": ("documents", "document"), "wheel": ("wheels", "wheel")}
     success, message = create_entry_with_level(storage, bucket_map[kind][0], bucket_map[kind][1], name, entry_id, None)
     if success and kind == "document":
         save_document_record(storage, entry_id, request.form)
@@ -607,6 +676,149 @@ def search():
     }
     total_results = sum(len(items) for items in grouped_results.values())
     return render_template("search_results.html", query=query, grouped_results=grouped_results, total_results=total_results)
+
+
+@app.route("/wheels")
+@login_required
+def wheels():
+    data = get_tracker_data()
+    return render_template("wheels.html", wheels=build_wheels_context(data, current_user()))
+
+
+@app.route("/wheels/create", methods=["POST"])
+@login_required
+@roles_required("admin")
+def create_wheel_route():
+    name = request.form.get("name", "")
+    entry_id = request.form.get("entry_id", "").strip() or generate_unique_hash(storage, WHEEL_PREFIX)
+    success, message = create_entry_with_level(storage, "wheels", "wheel", name, entry_id, None)
+    flash(message, "success" if success else "error")
+    return redirect(url_for("wheels"))
+
+
+@app.route("/wheel/<wheel_id>", methods=["GET", "POST"])
+@login_required
+def wheel_detail(wheel_id):
+    data = get_tracker_data()
+    view = build_wheel_view(data, wheel_id, current_user(), get_users_data())
+    if not view:
+        flash("Unknown or inaccessible wheel.", "error")
+        return redirect(url_for("wheels"))
+    return render_template("wheel_detail.html", view=view, spin_result=None)
+
+
+@app.route("/wheel/<wheel_id>/spin", methods=["POST"])
+@login_required
+def spin_wheel_route(wheel_id):
+    data = get_tracker_data()
+    record = data.get("wheel_records", {}).get(wheel_id)
+    if not user_can_view_wheel(record, current_user()):
+        flash("You do not have access to that wheel.", "error")
+        return redirect(url_for("wheels"))
+    success, message, result = spin_wheel(storage, wheel_id)
+    clear_request_caches()
+    data = get_tracker_data()
+    view = build_wheel_view(data, wheel_id, current_user(), get_users_data())
+    if not success or not view:
+        flash(message, "error")
+        return redirect(url_for("wheels"))
+    return render_template("wheel_detail.html", view=view, spin_result=result)
+
+
+@app.route("/wheel/<wheel_id>/settings", methods=["POST"])
+@login_required
+@roles_required("admin")
+def update_wheel_settings(wheel_id):
+    if not entry_is_accessible(get_tracker_data(), "wheel", wheel_id, current_user_level()):
+        flash("Unknown wheel.", "error")
+        return redirect(url_for("wheels"))
+    repeat_exceptions = [item.strip() for item in request.form.get("repeat_exceptions", "").split(",") if item.strip()]
+    success, message = save_wheel_settings(
+        storage,
+        wheel_id,
+        {
+            "entry_deletion": request.form.get("entry_deletion", "1"),
+            "stop_repeat_entry": "1" if request.form.get("stop_repeat_entry") == "on" else "0",
+            "repeat_exceptions": repeat_exceptions,
+        },
+    )
+    flash(message, "success" if success else "error")
+    clear_request_caches()
+    return redirect(url_for("wheel_detail", wheel_id=wheel_id))
+
+
+@app.route("/wheel/<wheel_id>/permissions", methods=["POST"])
+@login_required
+@roles_required("admin")
+def update_wheel_permissions_route(wheel_id):
+    if not entry_is_accessible(get_tracker_data(), "wheel", wheel_id, current_user_level()):
+        flash("Unknown wheel.", "error")
+        return redirect(url_for("wheels"))
+    success, message = save_wheel_permissions(storage, wheel_id, request.form.getlist("view_user_ids"), request.form.getlist("edit_user_ids"))
+    flash(message, "success" if success else "error")
+    clear_request_caches()
+    return redirect(url_for("wheel_detail", wheel_id=wheel_id))
+
+
+@app.route("/wheel/<wheel_id>/entries/text", methods=["POST"])
+@login_required
+def add_wheel_text_entries_route(wheel_id):
+    data = get_tracker_data()
+    record = data.get("wheel_records", {}).get(wheel_id)
+    if not user_can_edit_wheel(record, current_user()):
+        flash("You do not have edit access to that wheel.", "error")
+        return redirect(url_for("wheels"))
+    success, message = add_wheel_text_entries(storage, wheel_id, request.form.get("entries_text", "").splitlines())
+    flash(message, "success" if success else "error")
+    clear_request_caches()
+    return redirect(url_for("wheel_detail", wheel_id=wheel_id))
+
+
+@app.route("/wheel/<wheel_id>/entries/import", methods=["POST"])
+@login_required
+def import_wheel_entries_route(wheel_id):
+    data = get_tracker_data()
+    record = data.get("wheel_records", {}).get(wheel_id)
+    if not user_can_edit_wheel(record, current_user()):
+        flash("You do not have edit access to that wheel.", "error")
+        return redirect(url_for("wheels"))
+    success, message, _ = import_wheel_upload(wheel_id, request.files.get("bundle"))
+    flash(message, "success" if success else "error")
+    clear_request_caches()
+    return redirect(url_for("wheel_detail", wheel_id=wheel_id))
+
+
+@app.route("/wheel/<wheel_id>/entries/<entry_id>/delete", methods=["POST"])
+@login_required
+def delete_wheel_entry_route(wheel_id, entry_id):
+    data = get_tracker_data()
+    record = data.get("wheel_records", {}).get(wheel_id)
+    if not user_can_edit_wheel(record, current_user()):
+        flash("You do not have edit access to that wheel.", "error")
+        return redirect(url_for("wheels"))
+    success, payload = remove_wheel_entry(storage, wheel_id, entry_id)
+    if success:
+        if payload.get("kind") == "image":
+            delete_wheel_media(payload)
+        flash("Removed wheel entry.", "success")
+    else:
+        flash(payload, "error")
+    clear_request_caches()
+    return redirect(url_for("wheel_detail", wheel_id=wheel_id))
+
+
+@app.route("/wheel/<wheel_id>/cache-clear", methods=["POST"])
+@login_required
+def clear_wheel_cache_route(wheel_id):
+    data = get_tracker_data()
+    record = data.get("wheel_records", {}).get(wheel_id)
+    if not user_can_edit_wheel(record, current_user()):
+        flash("You do not have edit access to that wheel.", "error")
+        return redirect(url_for("wheels"))
+    success, message = clear_wheel_used_entries(storage, wheel_id)
+    flash(message, "success" if success else "error")
+    clear_request_caches()
+    return redirect(url_for("wheel_detail", wheel_id=wheel_id))
 
 
 @app.route("/alter/<alter_id>")
@@ -810,13 +1022,13 @@ def location_detail(location_id):
 @login_required
 @tracker_write_required
 def update_gallery(kind, entry_id):
-    if kind not in {"alter", "location"}:
+    if kind not in {"alter", "location", "affiliation"}:
         flash("Unsupported gallery type.", "error")
         return redirect(url_for("dashboard"))
     if not can_view_gallery_for_entry(get_tracker_data(), current_user(), kind, entry_id):
         flash("You do not have permission to view that locked gallery.", "error")
-        target = "alter_detail" if kind == "alter" else "location_detail"
-        arg_name = "alter_id" if kind == "alter" else "location_id"
+        target = "alter_detail" if kind == "alter" else "location_detail" if kind == "location" else "affiliation_detail"
+        arg_name = "alter_id" if kind == "alter" else "location_id" if kind == "location" else "affiliation_id"
         return redirect(url_for(target, **{arg_name: entry_id}))
     if not entry_is_accessible(get_tracker_data(), kind, entry_id, current_user_level()):
         flash("You do not have access to that entry.", "error")
@@ -836,8 +1048,8 @@ def update_gallery(kind, entry_id):
                 image_url = uploaded_image_url
             except ValueError as error:
                 flash(str(error), "error")
-                target = "alter_detail" if kind == "alter" else "location_detail"
-                arg_name = "alter_id" if kind == "alter" else "location_id"
+                target = "alter_detail" if kind == "alter" else "location_detail" if kind == "location" else "affiliation_detail"
+                arg_name = "alter_id" if kind == "alter" else "location_id" if kind == "location" else "affiliation_id"
                 return redirect(url_for(target, **{arg_name: entry_id}))
         if image_url and not is_managed_media_url(image_url):
             success, managed_image_url = import_gallery_media_from_url(storage, kind, entry_id, image_url)
@@ -845,16 +1057,16 @@ def update_gallery(kind, entry_id):
                 image_url = managed_image_url
             else:
                 flash(managed_image_url, "error")
-                target = "alter_detail" if kind == "alter" else "location_detail"
-                arg_name = "alter_id" if kind == "alter" else "location_id"
+                target = "alter_detail" if kind == "alter" else "location_detail" if kind == "location" else "affiliation_detail"
+                arg_name = "alter_id" if kind == "alter" else "location_id" if kind == "location" else "affiliation_id"
                 return redirect(url_for(target, **{arg_name: entry_id}))
         success, message = add_gallery_item(storage, kind, entry_id, image_url)
         if not success and uploaded_image_url:
             delete_gallery_upload(uploaded_image_url)
     flash(message, "success" if success else "error")
     clear_request_caches()
-    target = "alter_detail" if kind == "alter" else "location_detail"
-    arg_name = "alter_id" if kind == "alter" else "location_id"
+    target = "alter_detail" if kind == "alter" else "location_detail" if kind == "location" else "affiliation_detail"
+    arg_name = "alter_id" if kind == "alter" else "location_id" if kind == "location" else "affiliation_id"
     return redirect(url_for(target, **{arg_name: entry_id}))
 
 
@@ -862,7 +1074,7 @@ def update_gallery(kind, entry_id):
 @login_required
 @tracker_write_required
 def update_gallery_lock(kind, entry_id):
-    if kind not in {"alter", "location"}:
+    if kind not in {"alter", "location", "affiliation"}:
         flash("Unsupported gallery type.", "error")
         return redirect(url_for("dashboard"))
     if not entry_is_accessible(get_tracker_data(), kind, entry_id, current_user_level()):
@@ -871,8 +1083,8 @@ def update_gallery_lock(kind, entry_id):
     success, message = set_gallery_locked(storage, kind, entry_id, request.form.get("gallery_locked") == "on")
     flash(message, "success" if success else "error")
     clear_request_caches()
-    target = "alter_detail" if kind == "alter" else "location_detail"
-    arg_name = "alter_id" if kind == "alter" else "location_id"
+    target = "alter_detail" if kind == "alter" else "location_detail" if kind == "location" else "affiliation_detail"
+    arg_name = "alter_id" if kind == "alter" else "location_id" if kind == "location" else "affiliation_id"
     return redirect(url_for(target, **{arg_name: entry_id}))
 
 
@@ -897,11 +1109,17 @@ def update_alter_lock(section, alter_id):
 @app.route("/affiliation/<affiliation_id>")
 @login_required
 def affiliation_detail(affiliation_id):
-    view = build_affiliation_view(get_tracker_data(), affiliation_id, current_user_level())
+    data = get_tracker_data()
+    view = build_affiliation_view(data, affiliation_id, current_user_level())
     if not view:
         flash("Unknown or inaccessible affiliation.", "error")
         return redirect(url_for("dashboard"))
-    return render_template("affiliation_detail.html", view=view, can_view_memory=user_can_view_memory(current_user()))
+    return render_template(
+        "affiliation_detail.html",
+        view=view,
+        can_view_memory=user_can_view_memory(current_user()),
+        can_view_gallery=can_view_gallery_for_entry(data, current_user(), "affiliation", affiliation_id),
+    )
 
 
 @app.route("/affiliation/<affiliation_id>/summary", methods=["POST"])

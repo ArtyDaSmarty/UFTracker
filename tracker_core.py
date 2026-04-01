@@ -431,19 +431,6 @@ def legacy_affiliation():
     }
 
 
-def legacy_wheel():
-    return {
-        "entries": [],
-        "permissions": {"view": [], "edit": []},
-        "options": {
-            "entry_deletion": 1,
-            "stop_repeat_entry": 0,
-            "repeat_exceptions": [],
-        },
-        "used_entries": [],
-    }
-
-
 def load_users(storage):
     data = storage.read_json(USER_FILE, users_default())
     data.setdefault("users", [])
