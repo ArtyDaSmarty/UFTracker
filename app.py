@@ -1,5 +1,4 @@
 import mimetypes
-import io
 import os
 import logging
 import zipfile
@@ -192,27 +191,29 @@ def import_wheel_upload(wheel_id, file_storage):
     if not file_storage or not file_storage.filename:
         return False, "Choose a .zip or .txt file.", 0
     suffix = Path(secure_filename(file_storage.filename)).suffix.lower()
-    payload = file_storage.read()
     if suffix == ".txt":
-        lines = payload.decode("utf-8", errors="replace").splitlines()
+        file_storage.stream.seek(0)
+        lines = file_storage.stream.read().decode("utf-8", errors="replace").splitlines()
         return (*add_wheel_text_entries(storage, wheel_id, lines), len([line for line in lines if line.strip() and not line.strip().startswith("#")]))
     if suffix != ".zip":
         return False, "Imports must be .zip or .txt.", 0
     added = 0
     try:
-        with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+        file_storage.stream.seek(0)
+        with zipfile.ZipFile(file_storage.stream) as archive:
             for member in archive.infolist():
                 if member.is_dir():
                     continue
                 member_name = Path(member.filename).name
                 lower = member_name.lower()
-                content = archive.read(member)
                 if lower.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tif", ".tiff")):
+                    content = archive.read(member)
                     success, _ = add_wheel_image_entry(storage, wheel_id, member_name, content)
                     if success:
                         added += 1
                 elif lower.endswith(".txt"):
-                    lines = content.decode("utf-8", errors="replace").splitlines()
+                    with archive.open(member) as text_file:
+                        lines = text_file.read().decode("utf-8", errors="replace").splitlines()
                     success, message = add_wheel_text_entries(storage, wheel_id, lines)
                     if success:
                         added += len([line for line in lines if line.strip() and not line.strip().startswith("#")])
