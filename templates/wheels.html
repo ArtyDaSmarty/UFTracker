@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+  <div>
+    <h2>Wheels</h2>
+    <p class="muted">Only wheels you can access appear here.</p>
+  </div>
+</section>
+
+{% if current_role == 'admin' %}
+<section class="card">
+  <h3>Create Wheel</h3>
+  <form method="post" action="{{ url_for('create_wheel_route') }}" class="stack compact">
+    <label>Wheel name<input name="name" required></label>
+    <label>Wheel ID<input id="wheel-entry-id" name="entry_id" placeholder="Leave blank to auto-generate"></label>
+    <button class="primary">Create Wheel</button>
+  </form>
+  <form method="post" action="{{ url_for('generate_id', kind='wheel') }}" class="stack compact top-gap inline-form-card" data-async="json" data-target="#wheel-entry-id">
+    <label>Generate Wheel ID Prefix
+      <select name="prefix">
+        <option value="">No Prefix</option>
+        <option value="WHL-">WHL-</option>
+      </select>
+    </label>
+    <button type="submit">Generate Wheel ID</button>
+  </form>
+</section>
+{% endif %}
+
+<section class="card top-gap">
+  <h3>Accessible Wheels</h3>
+  <div class="stack compact">
+    {% for wheel in wheels %}
+    <a class="list-item" href="{{ url_for('wheel_detail', wheel_id=wheel.id) }}">{{ wheel.name }} <span>{{ wheel.id }}{% if wheel.can_edit %} | EDIT{% endif %}</span></a>
+    {% else %}
+    <p class="muted">No wheels are available to this account.</p>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

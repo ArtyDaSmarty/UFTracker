@@ -40,6 +40,7 @@ DEFAULT_ALTER_PREFIXES = ["UFA-"]
 DEFAULT_AFFILIATION_PREFIXES = ["AFF-"]
 LOCATION_PREFIX = "LOC-"
 DOCUMENT_PREFIX = "DOC-"
+WHEEL_PREFIX = "WHL-"
 LEGACY_VALUE = "LEGACY"
 STATUS_OPTIONS = ["Current", "Formerly", "Independent"]
 ROLE_OPTIONS = ["user", "mod", "admin"]
@@ -228,9 +229,10 @@ def tracker_default():
         "locations": {},
         "affiliations": {},
         "documents": {},
+        "wheels": {},
         "relations": [],
         "location_bindings": {},
-        "last_modified": {"alters": {}, "locations": {}, "affiliations": {}, "documents": {}},
+        "last_modified": {"alters": {}, "locations": {}, "affiliations": {}, "documents": {}, "wheels": {}},
         "relation_tags": list(DEFAULT_RELATION_TAGS),
         "special_relation_tags": dict(DEFAULT_SPECIAL_RELATION_TAGS),
         "alter_prefixes": list(DEFAULT_ALTER_PREFIXES),
@@ -239,6 +241,7 @@ def tracker_default():
         "location_galleries": {},
         "document_records": {},
         "affiliation_records": {},
+        "wheel_records": {},
     }
 
 
@@ -557,6 +560,7 @@ def sync_saved_hashes_with_tracker(storage, data):
     hashes.update(data["locations"].keys())
     hashes.update(data["affiliations"].keys())
     hashes.update(data["documents"].keys())
+    hashes.update(data["wheels"].keys())
     save_saved_hashes(storage, hashes)
     return hashes
 
@@ -567,9 +571,10 @@ def load_data(storage):
     data.setdefault("locations", {})
     data.setdefault("affiliations", {})
     data.setdefault("documents", {})
+    data.setdefault("wheels", {})
     data.setdefault("relations", [])
     data.setdefault("location_bindings", {})
-    data.setdefault("last_modified", {"alters": {}, "locations": {}, "affiliations": {}, "documents": {}})
+    data.setdefault("last_modified", {"alters": {}, "locations": {}, "affiliations": {}, "documents": {}, "wheels": {}})
     data.setdefault("relation_tags", list(DEFAULT_RELATION_TAGS))
     data.setdefault("special_relation_tags", dict(DEFAULT_SPECIAL_RELATION_TAGS))
     data.setdefault("alter_prefixes", list(DEFAULT_ALTER_PREFIXES))
@@ -579,10 +584,12 @@ def load_data(storage):
     data.setdefault("location_gallery_locks", {})
     data.setdefault("document_records", {})
     data.setdefault("affiliation_records", {})
+    data.setdefault("wheel_records", {})
     data["last_modified"].setdefault("alters", {})
     data["last_modified"].setdefault("locations", {})
     data["last_modified"].setdefault("affiliations", {})
     data["last_modified"].setdefault("documents", {})
+    data["last_modified"].setdefault("wheels", {})
 
     data["relation_tags"] = unique_items(
         list(DEFAULT_RELATION_TAGS)
@@ -706,6 +713,37 @@ def load_data(storage):
         record["ties"] = normalized_ties
         record["document_locked"] = bool(record.get("document_locked", False))
 
+    for wheel_id in data["wheels"]:
+        if wheel_id not in data["last_modified"]["wheels"]:
+            data["last_modified"]["wheels"][wheel_id] = ""
+            changed = True
+        record = data["wheel_records"].setdefault(wheel_id, legacy_wheel())
+        permissions = record.get("permissions", {})
+        record["permissions"] = {
+            "view": [str(item) for item in permissions.get("view", []) if str(item).strip()],
+            "edit": [str(item) for item in permissions.get("edit", []) if str(item).strip()],
+        }
+        options = record.get("options", {})
+        record["options"] = {
+            "entry_deletion": 2 if int(options.get("entry_deletion", 1)) == 2 else (0 if int(options.get("entry_deletion", 1)) == 0 else 1),
+            "stop_repeat_entry": 1 if int(options.get("stop_repeat_entry", 0)) == 1 else 0,
+            "repeat_exceptions": [str(item).strip() for item in options.get("repeat_exceptions", []) if str(item).strip()],
+        }
+        record["used_entries"] = [str(item) for item in record.get("used_entries", []) if str(item).strip()]
+        normalized_entries = []
+        for entry in record.get("entries", []):
+            entry_id = str(entry.get("id", "")).strip() or secrets.token_hex(8)
+            kind = "image" if str(entry.get("kind", "text")).strip().lower() == "image" else "text"
+            text = str(entry.get("text", "") or "")
+            media_url = str(entry.get("media_url", "") or "")
+            label = str(entry.get("label", "") or "")
+            if kind == "text" and not text.strip():
+                continue
+            if kind == "image" and not media_url.strip():
+                continue
+            normalized_entries.append({"id": entry_id, "kind": kind, "text": text, "media_url": media_url, "label": label})
+        record["entries"] = normalized_entries
+
     if changed:
         save_data(storage, data)
         sync_saved_hashes_with_tracker(storage, data)
@@ -810,6 +848,8 @@ def create_entry_with_level(storage, bucket_name, entity_label, name, entry_id, 
         data["document_records"].setdefault(entry_id, legacy_document())
     elif bucket_name == "affiliations":
         data["affiliation_records"].setdefault(entry_id, legacy_affiliation())
+    elif bucket_name == "wheels":
+        data["wheel_records"].setdefault(entry_id, legacy_wheel())
     save_data(storage, data)
     sync_saved_hashes_with_tracker(storage, data)
     return True, f"Created {entity_label}: {name} ({entry_id})"
@@ -897,14 +937,33 @@ def can_view_document_for_entry(data, user, document_id):
     return user_can_view_documents(user)
 
 
+def user_can_view_wheel(wheel_record, user):
+    if not user or not wheel_record:
+        return False
+    if user.get("role") == "admin":
+        return True
+    user_id = str(user.get("id", "")).strip()
+    permissions = wheel_record.get("permissions", {})
+    return user_id in permissions.get("view", []) or user_id in permissions.get("edit", [])
+
+
+def user_can_edit_wheel(wheel_record, user):
+    if not user or not wheel_record:
+        return False
+    if user.get("role") == "admin":
+        return True
+    user_id = str(user.get("id", "")).strip()
+    return user_id in wheel_record.get("permissions", {}).get("edit", [])
+
+
 def entry_is_accessible(data, kind, entry_id, user_level=None):
-    bucket_map = {"alter": "alters", "location": "locations", "affiliation": "affiliations", "document": "documents"}
+    bucket_map = {"alter": "alters", "location": "locations", "affiliation": "affiliations", "document": "documents", "wheel": "wheels"}
     bucket_name = bucket_map[kind]
     return entry_id in data[bucket_name]
 
 
 def visible_entries(data, kind, user_level=None):
-    bucket_map = {"alter": "alters", "location": "locations", "affiliation": "affiliations", "document": "documents"}
+    bucket_map = {"alter": "alters", "location": "locations", "affiliation": "affiliations", "document": "documents", "wheel": "wheels"}
     bucket_name = bucket_map[kind]
     return [
         (entry_id, name)
@@ -1413,6 +1472,146 @@ def set_document_locked(storage, document_id, locked):
     return True, "Document lock updated."
 
 
+def save_wheel_settings(storage, wheel_id, options):
+    data = load_data(storage)
+    if wheel_id not in data["wheels"]:
+        return False, "Unknown wheel."
+    record = data["wheel_records"].setdefault(wheel_id, legacy_wheel())
+    try:
+        entry_deletion = int(options.get("entry_deletion", 1))
+    except Exception:
+        entry_deletion = 1
+    if entry_deletion not in {0, 1, 2}:
+        entry_deletion = 1
+    try:
+        stop_repeat = int(options.get("stop_repeat_entry", 0))
+    except Exception:
+        stop_repeat = 0
+    stop_repeat = 1 if stop_repeat == 1 else 0
+    record["options"] = {
+        "entry_deletion": entry_deletion,
+        "stop_repeat_entry": stop_repeat,
+        "repeat_exceptions": [item.strip() for item in options.get("repeat_exceptions", []) if str(item).strip()],
+    }
+    touch_entry(data, "wheels", wheel_id)
+    save_data(storage, data)
+    return True, "Saved wheel settings."
+
+
+def save_wheel_permissions(storage, wheel_id, view_ids, edit_ids):
+    data = load_data(storage)
+    if wheel_id not in data["wheels"]:
+        return False, "Unknown wheel."
+    edit_ids = unique_items([str(item).strip() for item in edit_ids if str(item).strip()])
+    view_ids = unique_items([str(item).strip() for item in view_ids if str(item).strip()] + edit_ids)
+    data["wheel_records"].setdefault(wheel_id, legacy_wheel())["permissions"] = {"view": view_ids, "edit": edit_ids}
+    touch_entry(data, "wheels", wheel_id)
+    save_data(storage, data)
+    return True, "Saved wheel permissions."
+
+
+def add_wheel_text_entries(storage, wheel_id, texts):
+    data = load_data(storage)
+    if wheel_id not in data["wheels"]:
+        return False, "Unknown wheel."
+    record = data["wheel_records"].setdefault(wheel_id, legacy_wheel())
+    added = 0
+    for text in texts:
+        text = str(text or "").strip()
+        if not text or text.startswith("#"):
+            continue
+        record["entries"].append({"id": secrets.token_hex(8), "kind": "text", "text": text, "media_url": "", "label": ""})
+        added += 1
+    if not added:
+        return False, "No usable text entries were found."
+    touch_entry(data, "wheels", wheel_id)
+    save_data(storage, data)
+    return True, f"Added {added} text entr{'y' if added == 1 else 'ies'}."
+
+
+def add_wheel_image_entry(storage, wheel_id, filename, payload):
+    data = load_data(storage)
+    if wheel_id not in data["wheels"]:
+        return False, "Unknown wheel."
+    suffix = Path(filename or "").suffix.lower() or ".bin"
+    stored_name = f"{secrets.token_hex(12)}{suffix}"
+    media_name = media_storage_name("wheel", wheel_id, stored_name)
+    storage.write_bytes(media_name, payload)
+    media_url = managed_media_url("wheel", wheel_id, stored_name)
+    record = data["wheel_records"].setdefault(wheel_id, legacy_wheel())
+    record["entries"].append({"id": secrets.token_hex(8), "kind": "image", "text": "", "media_url": media_url, "label": Path(filename or stored_name).name})
+    touch_entry(data, "wheels", wheel_id)
+    save_data(storage, data)
+    return True, "Added image entry."
+
+
+def remove_wheel_entry(storage, wheel_id, entry_id):
+    data = load_data(storage)
+    if wheel_id not in data["wheels"]:
+        return False, "Unknown wheel."
+    record = data["wheel_records"].setdefault(wheel_id, legacy_wheel())
+    entries = record.get("entries", [])
+    target = next((item for item in entries if item.get("id") == entry_id), None)
+    if not target:
+        return False, "That wheel entry was not found."
+    entries.remove(target)
+    record["used_entries"] = [item for item in record.get("used_entries", []) if item != entry_id]
+    touch_entry(data, "wheels", wheel_id)
+    save_data(storage, data)
+    return True, target
+
+
+def clear_wheel_used_entries(storage, wheel_id):
+    data = load_data(storage)
+    if wheel_id not in data["wheels"]:
+        return False, "Unknown wheel."
+    data["wheel_records"].setdefault(wheel_id, legacy_wheel())["used_entries"] = []
+    touch_entry(data, "wheels", wheel_id)
+    save_data(storage, data)
+    return True, "Cleared wheel repeat cache."
+
+
+def spin_wheel(storage, wheel_id):
+    data = load_data(storage)
+    if wheel_id not in data["wheels"]:
+        return False, "Unknown wheel.", None
+    record = data["wheel_records"].setdefault(wheel_id, legacy_wheel())
+    entries = list(record.get("entries", []))
+    if not entries:
+        return False, "This wheel has no entries.", None
+    options = record.get("options", {})
+    usable = list(entries)
+    if int(options.get("stop_repeat_entry", 0)) == 1:
+        used_ids = set(record.get("used_entries", []))
+        repeat_exceptions = {item.strip() for item in options.get("repeat_exceptions", []) if str(item).strip()}
+        filtered = []
+        for entry in usable:
+            if entry["kind"] == "text" and entry.get("text", "").strip() in repeat_exceptions:
+                filtered.append(entry)
+                continue
+            if entry["id"] in used_ids:
+                continue
+            filtered.append(entry)
+        if filtered:
+            usable = filtered
+        else:
+            record["used_entries"] = []
+            usable = list(entries)
+    selected = random.choice(usable)
+    if int(options.get("stop_repeat_entry", 0)) == 1 and selected["id"] not in record["used_entries"]:
+        record["used_entries"].append(selected["id"])
+    deleted = False
+    if int(options.get("entry_deletion", 1)) == 2:
+        target = next((item for item in record["entries"] if item.get("id") == selected["id"]), None)
+        if target:
+            record["entries"].remove(target)
+            record["used_entries"] = [item for item in record.get("used_entries", []) if item != selected["id"]]
+            deleted = True
+    touch_entry(data, "wheels", wheel_id)
+    save_data(storage, data)
+    return True, "Selected wheel entry.", {"entry": selected, "deleted": deleted, "options": options}
+
+
 def save_affiliation_summary(storage, affiliation_id, summary):
     data = load_data(storage)
     if affiliation_id not in data["affiliations"]:
@@ -1460,7 +1659,7 @@ def remove_affiliation_timeline_entry(storage, affiliation_id, entry_id):
 
 def delete_entry(storage, kind, entry_id):
     data = load_data(storage)
-    bucket_map = {"alter": "alters", "location": "locations", "affiliation": "affiliations", "document": "documents"}
+    bucket_map = {"alter": "alters", "location": "locations", "affiliation": "affiliations", "document": "documents", "wheel": "wheels"}
     if kind not in bucket_map:
         return False, "Unknown entry type."
     bucket_name = bucket_map[kind]
@@ -1494,12 +1693,17 @@ def delete_entry(storage, kind, entry_id):
                 profile["affiliations"] = [item for item in profile.get("affiliations", []) if item["value"] != entry_id]
             data["last_modified"]["affiliations"].pop(entry_id, None)
         else:
-            data["documents"].pop(entry_id, None)
-            data["document_records"].pop(entry_id, None)
-            for record in data["document_records"].values():
-                ties = record.get("ties", {})
-                ties["documents"] = [item for item in ties.get("documents", []) if item != entry_id]
-            data["last_modified"]["documents"].pop(entry_id, None)
+            if kind == "document":
+                data["documents"].pop(entry_id, None)
+                data["document_records"].pop(entry_id, None)
+                for record in data["document_records"].values():
+                    ties = record.get("ties", {})
+                    ties["documents"] = [item for item in ties.get("documents", []) if item != entry_id]
+                data["last_modified"]["documents"].pop(entry_id, None)
+            else:
+                data["wheels"].pop(entry_id, None)
+                data["wheel_records"].pop(entry_id, None)
+                data["last_modified"]["wheels"].pop(entry_id, None)
 
     save_data(storage, data)
     return True, f"Removed {kind} entry."
@@ -1827,6 +2031,64 @@ def build_document_view(data, document_id, user_level=4):
         "locations": sorted(visible_entries(data, "location", user_level), key=lambda item: item[1].casefold()),
         "affiliations": sorted(visible_entries(data, "affiliation", user_level), key=lambda item: item[1].casefold()),
         "documents": sorted([(entry_id, name) for entry_id, name in visible_entries(data, "document", user_level) if entry_id != document_id], key=lambda item: item[1].casefold()),
+    }
+
+
+def build_wheels_context(data, user):
+    wheels = []
+    for wheel_id, name in sorted(data["wheels"].items(), key=lambda item: item[1].casefold()):
+        record = data["wheel_records"].get(wheel_id, legacy_wheel())
+        if not user_can_view_wheel(record, user):
+            continue
+        wheels.append(
+            {
+                "id": wheel_id,
+                "name": name,
+                "can_edit": user_can_edit_wheel(record, user),
+                "entry_count": len(record.get("entries", [])),
+            }
+        )
+    return wheels
+
+
+def build_wheel_view(data, wheel_id, user, users_data):
+    if wheel_id not in data["wheels"]:
+        return None
+    record = data["wheel_records"].get(wheel_id, legacy_wheel())
+    if not user_can_view_wheel(record, user):
+        return None
+    entries = []
+    for entry in record.get("entries", []):
+        entries.append(
+            {
+                "id": entry["id"],
+                "kind": entry["kind"],
+                "display": entry.get("text", "") if entry["kind"] == "text" else f"Image | {entry.get('label') or 'uploaded file'}",
+                "text": entry.get("text", ""),
+                "media_url": entry.get("media_url", ""),
+                "label": entry.get("label", ""),
+            }
+        )
+    user_rows = []
+    for row in users_data.get("users", []):
+        if row.get("role") == "admin":
+            continue
+        user_rows.append(
+            {
+                "id": row["id"],
+                "username": row["username"],
+                "can_view": row["id"] in record.get("permissions", {}).get("view", []) or row["id"] in record.get("permissions", {}).get("edit", []),
+                "can_edit": row["id"] in record.get("permissions", {}).get("edit", []),
+            }
+        )
+    return {
+        "id": wheel_id,
+        "name": data["wheels"][wheel_id],
+        "entries": entries,
+        "can_edit": user_can_edit_wheel(record, user),
+        "options": record.get("options", legacy_wheel()["options"]),
+        "permissions": record.get("permissions", legacy_wheel()["permissions"]),
+        "user_rows": user_rows,
     }
 
 
