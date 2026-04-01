@@ -42,10 +42,20 @@
       <label>Add Text Entries<textarea name="entries_text" rows="6" placeholder="One entry per line"></textarea></label>
       <button class="primary">Add Text Entries</button>
     </form>
-    <form method="post" action="{{ url_for('import_wheel_entries_route', wheel_id=view.id) }}" enctype="multipart/form-data" class="stack compact top-gap">
+    <form method="post" action="{{ url_for('import_wheel_entries_route', wheel_id=view.id) }}" enctype="multipart/form-data" class="stack compact top-gap" id="wheelImportForm">
       <label>Import .zip or .txt<input type="file" name="bundle" accept=".zip,.txt"></label>
-      <button>Import Entries</button>
+      <button id="wheelImportButton">Import Entries</button>
     </form>
+    <div class="wheel-import-progress top-gap" id="wheelImportProgress" hidden>
+      <div class="kv">
+        <strong id="wheelImportState">Preparing import...</strong>
+        <span id="wheelImportCount">0 / 0</span>
+      </div>
+      <div class="progress-track" aria-hidden="true">
+        <div class="progress-fill" id="wheelImportFill"></div>
+      </div>
+      <p class="muted" id="wheelImportMessage">Upload received. Preparing import...</p>
+    </div>
     <form method="post" action="{{ url_for('clear_wheel_cache_route', wheel_id=view.id) }}" class="top-gap">
       <button>Clear Repeat Cache</button>
     </form>
@@ -102,4 +112,110 @@
     {% endif %}
   </div>
 </section>
+<script>
+  (function () {
+    const form = document.getElementById('wheelImportForm');
+    if (!form) {
+      return;
+    }
+    const fileInput = form.querySelector('input[name="bundle"]');
+    const button = document.getElementById('wheelImportButton');
+    const progress = document.getElementById('wheelImportProgress');
+    const state = document.getElementById('wheelImportState');
+    const count = document.getElementById('wheelImportCount');
+    const fill = document.getElementById('wheelImportFill');
+    const message = document.getElementById('wheelImportMessage');
+    let pollHandle = null;
+
+    function setProgress(job) {
+      const processed = Number(job.processed || 0);
+      const total = Number(job.total || 0);
+      const percent = total > 0 ? Math.max(0, Math.min(100, (processed / total) * 100)) : 0;
+      progress.hidden = false;
+      state.textContent = job.state === 'complete' ? 'Import complete' : job.state === 'error' ? 'Import failed' : 'Importing entries...';
+      count.textContent = `${processed} / ${total || '?'}`;
+      fill.style.width = `${percent}%`;
+      message.textContent = job.message || 'Working...';
+    }
+
+    function stopPolling() {
+      if (pollHandle) {
+        clearInterval(pollHandle);
+        pollHandle = null;
+      }
+    }
+
+    async function pollStatus(statusUrl) {
+      const response = await fetch(statusUrl, { credentials: 'same-origin' });
+      const payload = await response.json();
+      if (!payload.ok) {
+        stopPolling();
+        state.textContent = 'Import failed';
+        message.textContent = payload.message || 'That import failed to complete.';
+        button.disabled = false;
+        button.textContent = 'Import Entries';
+        return;
+      }
+      setProgress(payload.job);
+      if (payload.job.state === 'complete' || payload.job.state === 'error') {
+        stopPolling();
+        button.disabled = false;
+        button.textContent = 'Import Entries';
+        if (payload.job.state === 'complete') {
+          window.location.reload();
+        }
+      }
+    }
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      if (!fileInput || !fileInput.files || !fileInput.files.length) {
+        return;
+      }
+      stopPolling();
+      progress.hidden = false;
+      state.textContent = 'Uploading zip...';
+      count.textContent = '0 / 0';
+      fill.style.width = '0%';
+      message.textContent = 'Sending file to the server...';
+      button.disabled = true;
+      button.textContent = 'Starting...';
+
+      const body = new FormData(form);
+      const response = await fetch(form.action, {
+        method: 'POST',
+        body,
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        credentials: 'same-origin'
+      });
+      const payload = await response.json();
+      if (!payload.ok) {
+        button.disabled = false;
+        button.textContent = 'Import Entries';
+        state.textContent = 'Import failed';
+        message.textContent = payload.message || 'That import failed to start.';
+        return;
+      }
+      state.textContent = 'Importing entries...';
+      message.textContent = 'Processing zip contents...';
+      button.textContent = 'Importing...';
+      pollHandle = setInterval(() => {
+        pollStatus(payload.status_url).catch(() => {
+          stopPolling();
+          button.disabled = false;
+          button.textContent = 'Import Entries';
+          state.textContent = 'Import failed';
+          message.textContent = 'Could not read import progress.';
+        });
+      }, 900);
+      pollStatus(payload.status_url).catch(() => {
+        stopPolling();
+        button.disabled = false;
+        button.textContent = 'Import Entries';
+        state.textContent = 'Import failed';
+        message.textContent = 'Could not read import progress.';
+      });
+    });
+  })();
+</script>
 {% endblock %}
