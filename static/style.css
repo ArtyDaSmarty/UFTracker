@@ -306,6 +306,14 @@ button.primary:hover, .button-link:hover { filter: brightness(1.08); }
 .document-body code {
   font-family: inherit;
 }
+.wheel-result-image {
+  display: block;
+  max-width: 100%;
+  max-height: 320px;
+  object-fit: contain;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--card) 86%, var(--sidebar));
+}
 
 @media (max-width: 1200px) {
   .cols-5, .cols-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
