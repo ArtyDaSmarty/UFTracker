@@ -26,6 +26,7 @@
       <p class="muted">{{ current_user.username }} | {{ current_role|upper }}</p>
       <nav>
         <a href="{{ url_for('dashboard') }}">Dashboard</a>
+        <a href="{{ url_for('wheels') }}">Wheels</a>
         {% if current_role == 'admin' %}
         <a href="{{ url_for('admin_options') }}" class="nav-button">Admin Options</a>
         {% endif %}
